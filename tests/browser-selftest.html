@@ -239,10 +239,12 @@
       log(filmHoles.length && filmHoles.every(function (op) { return op.w < op.h; }), '横向胶片孔为竖向长孔');
       var filmTexts = filmScene.ops.filter(function (op) { return op.kind === 'text'; });
       var stockText = filmTexts.filter(function (op) { return op.text === 'PORTRA 400'; })[0];
-      var printText = filmTexts.filter(function (op) { return op.text === 'P'; })[0];
+      var expectedMode = canonSummary.exposureModeText || 'P';
+      var expectedComp = canonSummary.exposureCompText || '±0.0';
+      var printText = filmTexts.filter(function (op) { return op.text === expectedMode; })[0];
       log(!!stockText && !!printText && stockText.shadowBlur === 0 && printText.shadowBlur > 0,
         '胶片原有边字清晰、Pentax 打印带光晕');
-      var pentaxItems = ['P', '±0.0', '400', '250', 'F2.8'];
+      var pentaxItems = [expectedMode, expectedComp, '400', '250', 'F2.8'];
       log(pentaxItems.every(function (t) { return !!filmTexts.filter(function (op) { return op.text === t; })[0]; }),
         'Pentax 孔间打印档位/曝光补偿/ISO/快门/光圈');
       log(filmTexts.filter(function (op) { return op.text === 'PORTRA 400'; }).length === 1, '胶卷型号只出现一次');
@@ -436,9 +438,15 @@
 
       // 水印字段清单：固定 15 项，均可读取与写入
       eq(typeof WM.meta.WATERMARK_FIELDS, 'object', 'WATERMARK_FIELDS 已导出');
-      eq(WM.meta.WATERMARK_FIELDS.length, 15, '正好 15 项水印字段');
+      eq(WM.meta.WATERMARK_FIELDS.length, 17, '正好 17 项水印字段');
       var wmFields = WM.meta.WATERMARK_FIELDS.map(function (f) { return f.field; });
-      eq(new Set(wmFields).size, 15, '字段名不重复');
+      eq(new Set(wmFields).size, 17, '字段名不重复');
+      eq(WM.meta.WATERMARK_GROUPS.length, 4, '四个字段分组');
+      eq(WM.meta.WATERMARK_GROUPS.map(function (g) { return g.title; }).join(','),
+        '相机与器材,曝光参数,文件信息,地理位置', '分组标题正确');
+      eq(WM.meta.WATERMARK_FIELDS.every(function (f) {
+        return WM.meta.WATERMARK_GROUPS.some(function (g) { return g.id === f.group; });
+      }), true, '每个字段都有分组');
       var emptySummary = WM.meta.buildSummary({
         format: 'jpeg', dimensions: { width: 100, height: 80 },
         file: { name: 'x.jpg', size: 1 }, exif: null, warnings: []
@@ -452,13 +460,24 @@
         aperture: 'f/2', shutter: '1/250s', iso: 'ISO 400',
         datetime: '2024-05-01 12:34:56', offset: '+08:00',
         lat: '30.2701', lon: '120.1551', alt: '40 米',
-        artist: 'A', copyright: 'C', filename: 'r.jpg'
+        artist: 'A', copyright: 'C', filename: 'r.jpg',
+        exposureComp: '+0.7', exposureMode: 'av'
       };
       var allWritable = WM.meta.WATERMARK_FIELDS.every(function (f) {
         return WM.meta.applyFieldEdit(emptySummary, f.field, samples[f.field]).ok === true;
       });
       log(allWritable, '无 EXIF 时每个字段都可写入');
       eq(emptySummary.filename, 'r.jpg', 'filename 可被修改');
+      eq(emptySummary.exposureComp, 0.7, '曝光补偿写入数值');
+      eq(WM.meta.formatFieldDisplay('exposureComp', emptySummary), '+0.7 EV', '曝光补偿格式化');
+      eq(emptySummary.exposureMode, 'A', '档位规范化为 A');
+      eq(WM.meta.formatFieldDisplay('exposureMode', emptySummary), 'A', '非佳能显示 A');
+      var canonSummary = WM.meta.buildSummary({ format: 'jpeg', dimensions: { width: 10, height: 10 }, file: { name: 'c.jpg', size: 1 }, exif: null, warnings: [] });
+      canonSummary.make = 'Canon';
+      WM.meta.applyFieldEdit(canonSummary, 'exposureMode', 'tv');
+      eq(WM.meta.formatFieldDisplay('exposureMode', canonSummary), 'Tv', '佳能显示 Tv');
+      eq(WM.state.FILM_ORIENTATIONS.map(function (o) { return o.value; }).join(','),
+        'horizontal,vertical', '齿孔方向只剩两项');
       eq(WM.meta.rowVisibility, undefined, 'rowVisibility 已移除');
       eq(WM.meta.groupVisibility, undefined, 'groupVisibility 已移除');
 

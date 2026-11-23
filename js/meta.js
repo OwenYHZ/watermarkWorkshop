@@ -609,6 +609,32 @@
     return isFinite(n) ? n : NaN;
   }
 
+  /* 曝光补偿与拍摄档位 ------------------------------------------------- */
+  function formatEv(value) {
+    if (!isFinite(value)) return '';
+    var rounded = Math.round(value * 10) / 10;
+    if (rounded === 0) return '±0.0';
+    return (rounded > 0 ? '+' : '-') + Math.abs(rounded).toFixed(1);
+  }
+
+  function exposureModeFromProgram(program) {
+    var code = Number(program);
+    if (code === 1) return 'M';
+    if (code === 2 || (code >= 5 && code <= 8)) return 'P';
+    if (code === 3) return 'A';
+    if (code === 4) return 'S';
+    return '';
+  }
+
+  function exposureModeLabel(mode, make) {
+    if (!mode) return '';
+    var m = String(make || '').toLowerCase();
+    var canonLike = m.indexOf('canon') >= 0 || m.indexOf('pentax') >= 0;
+    if (mode === 'A') return canonLike ? 'Av' : 'A';
+    if (mode === 'S') return canonLike ? 'Tv' : 'S';
+    return mode;
+  }
+
   function parseEditText(field, text) {
     var raw = String(text == null ? '' : text).trim();
     var empty = raw === '';
@@ -683,6 +709,24 @@
         if (!isFinite(alt)) return { ok: false, error: '海拔格式应为 40 或 -12.5' };
         return { ok: true, value: alt, display: (Math.round(alt * 10) / 10) + ' 米' };
       }
+      case 'exposureComp': {
+        if (empty) return { ok: true, value: NaN, display: '' };
+        var evText = raw.replace(/ev$/i, '').replace(/档$/i, '').trim();
+        var negative = evText.indexOf('-') === 0 || evText.indexOf('−') === 0;
+        evText = evText.replace(/^[+±−-]/, '').trim();
+        var ev = Number(evText);
+        if (!isFinite(ev)) return { ok: false, error: '曝光补偿格式应为 +0.3、-1 或 0' };
+        if (negative) ev = -ev;
+        if (Math.abs(ev) > 5) return { ok: false, error: '曝光补偿应在 -5 到 +5 之间' };
+        return { ok: true, value: ev, display: formatEv(ev) + ' EV' };
+      }
+      case 'exposureMode': {
+        if (empty) return { ok: true, value: '', display: '' };
+        var key = raw.toLowerCase().replace(/\s+/g, '');
+        var modeMap = { p: 'P', a: 'A', av: 'A', s: 'S', tv: 'S', m: 'M', auto: 'P' };
+        if (!modeMap[key]) return { ok: false, error: '档位应为 P / A / S / M（佳能可用 Av / Tv）' };
+        return { ok: true, value: modeMap[key], display: modeMap[key] };
+      }
       default:
         return { ok: false, error: '该字段不支持修改' };
     }
@@ -712,6 +756,8 @@
       case 'lat': return isFinite(summary.latitude) ? summary.latitude.toFixed(6) : '';
       case 'lon': return isFinite(summary.longitude) ? summary.longitude.toFixed(6) : '';
       case 'alt': return isFinite(summary.altitude) ? (Math.round(summary.altitude * 10) / 10) + ' 米' : '';
+      case 'exposureComp': return summary.exposureCompText ? summary.exposureCompText + ' EV' : '';
+      case 'exposureMode': return summary.exposureModeText || summary.exposureMode || '';
       default: return '';
     }
   }
@@ -780,6 +826,14 @@
       case 'lat': summary.latitude = value; recomputeSummaryCoords(summary); break;
       case 'lon': summary.longitude = value; recomputeSummaryCoords(summary); break;
       case 'alt': summary.altitude = value; break;
+      case 'exposureComp':
+        summary.exposureComp = value;
+        summary.exposureCompText = formatEv(value);
+        break;
+      case 'exposureMode':
+        summary.exposureMode = value;
+        summary.exposureModeText = exposureModeLabel(value, summary.make);
+        break;
       default:
         return { ok: false, error: '该字段不支持修改' };
     }
@@ -1056,6 +1110,8 @@
       if (isFinite(apex)) shutter = Math.pow(2, -apex);
     }
     var iso = numVal(sub, 0x8827) || numVal(sub, 0x8833) || numVal(sub, 0x8832);
+    var exposureComp = ratVal(sub, 0x9204);
+    var exposureMode = exposureModeFromProgram(numVal(sub, 0x8822));
 
     var dateRaw = textVal(sub, 0x9003) || textVal(sub, 0x9004) || textVal(ifd0, 0x0132);
     var date = parseDateParts(dateRaw);
@@ -1093,6 +1149,10 @@
       shutterText: formatShutterCompact(shutter),
       iso: isFinite(iso) ? iso : NaN,
       isoText: isFinite(iso) ? 'ISO ' + Math.round(iso) : '',
+      exposureComp: isFinite(exposureComp) ? exposureComp : NaN,
+      exposureCompText: isFinite(exposureComp) ? formatEv(exposureComp) : '',
+      exposureMode: exposureMode,
+      exposureModeText: exposureModeLabel(exposureMode, make),
       datetimeRaw: dateRaw,
       date: date,
       offset: offset,
@@ -1535,22 +1595,31 @@
    * 与 layout.js 里真正参与渲染的 token 一一对应，不多不少。
    * 与照片是否带 EXIF 无关：无 EXIF 时全为空值，仍可手动填入。
    * ------------------------------------------------------------------ */
+  var WATERMARK_GROUPS = [
+    { id: 'camera', title: '相机与器材' },
+    { id: 'exposure', title: '曝光参数' },
+    { id: 'file', title: '文件信息' },
+    { id: 'geo', title: '地理位置' }
+  ];
+
   var WATERMARK_FIELDS = [
-    { field: 'make',      label: '品牌',     cn: 'Make' },
-    { field: 'model',     label: '型号',     cn: 'Model' },
-    { field: 'lens',      label: '镜头',     cn: 'LensModel' },
-    { field: 'focal',     label: '焦距',     cn: 'FocalLength' },
-    { field: 'aperture',  label: '光圈',     cn: 'FNumber' },
-    { field: 'shutter',   label: '快门',     cn: 'ExposureTime' },
-    { field: 'iso',       label: 'ISO',      cn: 'ISOSpeedRatings' },
-    { field: 'datetime',  label: '拍摄时间', cn: 'DateTimeOriginal' },
-    { field: 'offset',    label: '时区',     cn: 'OffsetTimeOriginal' },
-    { field: 'lat',       label: '纬度',     cn: 'GPSLatitude' },
-    { field: 'lon',       label: '经度',     cn: 'GPSLongitude' },
-    { field: 'alt',       label: '海拔',     cn: 'GPSAltitude' },
-    { field: 'artist',    label: '作者',     cn: 'Artist' },
-    { field: 'copyright', label: '版权',     cn: 'Copyright' },
-    { field: 'filename',  label: '文件名',   cn: 'FileName' }
+    { field: 'make',      label: '品牌',     cn: 'Make',              group: 'camera' },
+    { field: 'model',     label: '型号',     cn: 'Model',             group: 'camera' },
+    { field: 'lens',      label: '镜头',     cn: 'LensModel',         group: 'camera' },
+    { field: 'focal',     label: '焦距',     cn: 'FocalLength',       group: 'exposure' },
+    { field: 'aperture',  label: '光圈',     cn: 'FNumber',           group: 'exposure' },
+    { field: 'shutter',   label: '快门',     cn: 'ExposureTime',      group: 'exposure' },
+    { field: 'iso',       label: 'ISO',      cn: 'ISOSpeedRatings',   group: 'exposure' },
+    { field: 'exposureComp', label: '曝光补偿', cn: 'ExposureBiasValue', group: 'exposure' },
+    { field: 'exposureMode', label: '拍摄模式', cn: 'ExposureProgram',   group: 'exposure' },
+    { field: 'filename',  label: '文件名',   cn: 'FileName',          group: 'file' },
+    { field: 'datetime',  label: '拍摄时间', cn: 'DateTimeOriginal',  group: 'file' },
+    { field: 'offset',    label: '时区',     cn: 'OffsetTimeOriginal', group: 'file' },
+    { field: 'artist',    label: '作者',     cn: 'Artist',            group: 'file' },
+    { field: 'copyright', label: '版权',     cn: 'Copyright',         group: 'file' },
+    { field: 'lat',       label: '纬度',     cn: 'GPSLatitude',       group: 'geo' },
+    { field: 'lon',       label: '经度',     cn: 'GPSLongitude',      group: 'geo' },
+    { field: 'alt',       label: '海拔',     cn: 'GPSAltitude',       group: 'geo' }
   ];
 
   function reportToJson(parsed, report) {
@@ -1828,6 +1897,9 @@
     buildReport: buildReport,
     reportToJson: reportToJson,
     WATERMARK_FIELDS: WATERMARK_FIELDS,
+    WATERMARK_GROUPS: WATERMARK_GROUPS,
+    formatEv: formatEv,
+    exposureModeLabel: exposureModeLabel,
     parseXmp: parseXmp,
     parseIptc: parseIptc,
     parseIcc: parseIcc,

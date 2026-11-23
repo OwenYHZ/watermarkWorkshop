@@ -34,6 +34,9 @@
     sectionRefs: {},
     exifView: null,
     exifShowAll: false,
+    previewZoom: 1,
+    previewFit: { w: 0, h: 0 },
+    zoomRaf: 0,
     panelWidths: { left: 336, right: 378 },
     panelApplied: { left: 336, right: 378 },
     modalOnClose: null
@@ -394,6 +397,8 @@
 
   function selectFile(id) {
     app.activeId = id;
+    app.previewZoom = 1;
+    app.previewFit = { w: 0, h: 0 };
     renderActivePhoto();
     renderFileList();
     renderExif({ resetView: true });
@@ -429,7 +434,10 @@
     updateFileCount();
     host.classList.toggle('is-empty', !app.files.length);
     if (!app.files.length) {
-      host.appendChild(el('div', 'placeholder', '还没有图片。拖入、点击选择或 Ctrl+V 粘贴一张 JPG / PNG。'));
+      var emptyBtn = el('button', 'gallery-empty', '还没有图片 · 拖入 / 点击选择 / Ctrl+V');
+      emptyBtn.type = 'button';
+      emptyBtn.addEventListener('click', openFilePicker);
+      host.appendChild(emptyBtn);
     } else {
       app.files.forEach(function (f) {
         var card = el('div', 'file-card' + (f.id === app.activeId ? ' active' : ''));
@@ -439,6 +447,8 @@
         var img = document.createElement('img');
         img.src = f.thumbUrl;
         img.alt = f.name;
+        img.draggable = false;
+        card.draggable = false;
         card.appendChild(img);
         if (f.edits && (Object.keys(f.edits.fields).length || Object.keys(f.edits.rows).length)) {
           var badge = el('span', 'fc-badge', '已修改');
@@ -463,14 +473,6 @@
         host.appendChild(card);
       });
     }
-    var add = el('button', 'gallery-add', '＋');
-    add.type = 'button';
-    add.id = 'btn-gallery-add';
-    add.title = '添加图片';
-    add.setAttribute('aria-label', '添加图片');
-    add.appendChild(el('span', 'gallery-add-text', '添加'));
-    add.addEventListener('click', function () { $id('file-input').click(); });
-    host.appendChild(add);
   }
 
   /* ------------------------------------------------------------------ *
@@ -517,8 +519,6 @@
     var file = activeFile();
     var btn = $id('btn-reset-exif');
     if (btn) btn.disabled = !file || !hasEdits(file);
-    var json = $id('btn-json-exif');
-    if (json) json.disabled = !file;
   }
 
   function captureExifView() {
@@ -603,53 +603,60 @@
     });
   }
 
-  /* 常用模式：固定 15 行水印字段，全部可编辑（与照片有无 EXIF 无关）。 */
+  /* 常用模式：按分组固定列出全部可上水印字段，全部可编辑（与有无 EXIF 无关）。 */
   function renderWatermarkFields(file) {
     var body = $id('exif-body');
     var summary = file.report.summary || {};
-    var details = document.createElement('details');
-    details.className = 'exif-group watermark-fields';
-    details.dataset.group = 'watermark';
-    details.open = app.exifView && app.exifView.open.watermark != null
-      ? app.exifView.open.watermark
-      : true;
-    var groupSummary = document.createElement('summary');
-    groupSummary.appendChild(el('span', null, '水印字段'));
-    groupSummary.appendChild(el('span', 'badge', String(meta.WATERMARK_FIELDS.length)));
-    details.appendChild(groupSummary);
+    var fields = meta.WATERMARK_FIELDS || [];
+    var groups = meta.WATERMARK_GROUPS || [];
 
-    meta.WATERMARK_FIELDS.forEach(function (def) {
-      var field = def.field;
-      var display = meta.formatFieldDisplay(field, summary);
-      var edited = !!(file.edits && file.edits.fields && file.edits.fields[field]);
-      var row = { name: def.label, value: display, source: 'EXIF' };
-      var rowEl = el('div', 'exif-row');
-      rowEl.dataset.field = field;
-      rowEl.dataset.search = [def.label, def.cn, field, display].join(' ').toLowerCase();
-      if (edited) rowEl.classList.add('edited');
-      var nameEl = el('div', 'exif-name');
-      nameEl.appendChild(document.createTextNode(def.label));
-      nameEl.appendChild(el('small', null, def.cn));
-      var valueEl = el('div', 'exif-value');
-      if (display) {
-        valueEl.appendChild(document.createTextNode(display));
-      } else {
-        valueEl.classList.add('is-empty');
-        valueEl.appendChild(el('span', 'exif-empty', '未填'));
-      }
-      if (edited && display) valueEl.appendChild(el('span', 'exif-edited-dot'));
-      valueEl.classList.add('editable');
-      valueEl.title = '双击修改或填入（仅影响水印与界面）';
-      valueEl.addEventListener('dblclick', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        beginExifEdit(row, field, 'watermark|' + field, valueEl);
+    groups.forEach(function (group) {
+      var defs = fields.filter(function (def) { return def.group === group.id; });
+      if (!defs.length) return;
+      var details = document.createElement('details');
+      details.className = 'exif-group watermark-fields';
+      details.dataset.group = 'wm-' + group.id;
+      details.open = app.exifView && app.exifView.open['wm-' + group.id] != null
+        ? app.exifView.open['wm-' + group.id]
+        : true;
+      var groupSummary = document.createElement('summary');
+      groupSummary.appendChild(el('span', null, group.title));
+      groupSummary.appendChild(el('span', 'badge', String(defs.length)));
+      details.appendChild(groupSummary);
+
+      defs.forEach(function (def) {
+        var field = def.field;
+        var display = meta.formatFieldDisplay(field, summary);
+        var edited = !!(file.edits && file.edits.fields && file.edits.fields[field]);
+        var row = { name: def.label, value: display, source: 'EXIF' };
+        var rowEl = el('div', 'exif-row');
+        rowEl.dataset.field = field;
+        rowEl.dataset.search = [def.label, def.cn, field, display].join(' ').toLowerCase();
+        if (edited) rowEl.classList.add('edited');
+        var nameEl = el('div', 'exif-name');
+        nameEl.appendChild(document.createTextNode(def.label));
+        nameEl.appendChild(el('small', null, def.cn));
+        var valueEl = el('div', 'exif-value');
+        if (display) {
+          valueEl.appendChild(document.createTextNode(display));
+        } else {
+          valueEl.classList.add('is-empty');
+          valueEl.appendChild(el('span', 'exif-empty', '未填'));
+        }
+        if (edited && display) valueEl.appendChild(el('span', 'exif-edited-dot'));
+        valueEl.classList.add('editable');
+        valueEl.title = '双击修改或填入（仅影响水印与界面）';
+        valueEl.addEventListener('dblclick', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          beginExifEdit(row, field, 'watermark|' + field, valueEl);
+        });
+        rowEl.appendChild(nameEl);
+        rowEl.appendChild(valueEl);
+        details.appendChild(rowEl);
       });
-      rowEl.appendChild(nameEl);
-      rowEl.appendChild(valueEl);
-      details.appendChild(rowEl);
+      body.appendChild(details);
     });
-    body.appendChild(details);
   }
 
   /* 全部模式：原分组全量列出，只读。 */
@@ -704,7 +711,7 @@
     var file = activeFile();
     if (!file) {
       body.textContent = '';
-      body.appendChild(el('div', 'placeholder', '载入图片后，这里固定列出所有可上水印的字段，可直接填写。'));
+      body.appendChild(el('div', 'placeholder', '载入图片后可在这里填写水印字段'));
       updateExifActions();
       return;
     }
@@ -884,6 +891,8 @@
     if (!file) {
       canvas.hidden = true;
       empty.hidden = false;
+      var zoomPill = $id('zoom-pill');
+      if (zoomPill) zoomPill.hidden = true;
       applyPhotoTheme(null);
       $id('preview-dims').textContent = '—';
       $id('preview-brand').textContent = '';
@@ -940,6 +949,9 @@
     setStatus('已渲染 ' + ms + ' ms' + (file.parsed.warnings.length ? ' · ' + file.parsed.warnings.length + ' 条警告' : ''));
     updateBrandPreview(brand, aspect);
     updateExportSummary();
+    app.previewFit = { w: 0, h: 0 };
+    measurePreviewFit();
+    applyPreviewZoom();
   }
 
   async function updateBrandPreview(brand, aspect) {
@@ -987,6 +999,56 @@
   }
 
   /* ------------------------------------------------------------------ *
+   * 预览缩放：− / ◯(自适应) / +，最大值即自适应
+   * ------------------------------------------------------------------ */
+  var ZOOM_MIN = 0.25;
+  var ZOOM_STEP = 0.1;
+
+  function measurePreviewFit() {
+    var canvas = $id('preview');
+    if (!canvas || canvas.hidden) return;
+    canvas.style.width = '';
+    canvas.style.height = '';
+    canvas.style.maxWidth = '100%';
+    canvas.style.maxHeight = '100%';
+    var rect = canvas.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      app.previewFit = { w: rect.width, h: rect.height };
+    }
+  }
+
+  function applyPreviewZoom() {
+    var canvas = $id('preview');
+    var pill = $id('zoom-pill');
+    var hasFile = !!activeFile();
+    if (pill) pill.hidden = !hasFile;
+    if (!canvas || !hasFile) return;
+    if (!app.previewFit.w || !app.previewFit.h) measurePreviewFit();
+    var w = Math.max(1, Math.round(app.previewFit.w * app.previewZoom));
+    var h = Math.max(1, Math.round(app.previewFit.h * app.previewZoom));
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    canvas.style.maxWidth = 'none';
+    canvas.style.maxHeight = 'none';
+    var out = $id('zoom-out');
+    var inn = $id('zoom-in');
+    if (out) out.disabled = app.previewZoom <= ZOOM_MIN + 0.001;
+    if (inn) inn.disabled = app.previewZoom >= 0.999;
+  }
+
+  function setPreviewZoom(value) {
+    var next = Math.min(1, Math.max(ZOOM_MIN, Math.round(value * 100) / 100));
+    app.previewZoom = next;
+    applyPreviewZoom();
+  }
+
+  function refreshPreviewFit() {
+    if (!activeFile()) return;
+    measurePreviewFit();
+    applyPreviewZoom();
+  }
+
+  /* ------------------------------------------------------------------ *
    * 控件
    * ------------------------------------------------------------------ */
   var T_ALL = ['param-panel', 'polaroid', 'bottom-bar', 'film-frame', 'dv-cam', 'tile-copyright'];
@@ -994,19 +1056,22 @@
 
   var SECTION_DEFS = [
     {
-      id: 'template', title: '水印模板', open: true,
+      id: 'template', title: '水印模板', open: true, reset: resetTemplateSettings,
       controls: [
-        { type: 'template', label: '选择模板' }
+        { type: 'template', label: '' }
       ]
     },
     {
       id: 'content', title: '显示内容', open: true,
-      templates: ['param-panel', 'polaroid', 'bottom-bar', 'film-frame', 'tile-copyright'],
+      templates: ['param-panel', 'polaroid', 'bottom-bar', 'tile-copyright'],
       controls: [
         { type: 'fields', label: '显示字段', templates: ['param-panel', 'polaroid', 'bottom-bar'] },
-        { type: 'textarea', label: '自定义文字', path: 'content.customText', hint: '勾选“自定义”或在底部白边/胶片槽位中选择“自定义文字”后显示。' },
+        { type: 'textarea', label: '自定义文字', path: 'content.customText',
+          templates: ['param-panel', 'polaroid', 'bottom-bar', 'tile-copyright'],
+          when: function (s) { return s.template === 'tile-copyright' || s.fields.custom; } },
         { type: 'select', label: '地点来源', path: 'content.locationMode', options: state.LOCATION_MODES,
-          templates: ['param-panel', 'polaroid', 'bottom-bar'] },
+          templates: ['param-panel', 'polaroid', 'bottom-bar'],
+          when: function (s) { return !!s.fields.location; } },
         { type: 'text', label: '手动地点', path: 'content.manualLocation',
           templates: ['param-panel', 'polaroid', 'bottom-bar'],
           when: function (s) { return s.content.locationMode === 'manual'; } },
@@ -1028,7 +1093,7 @@
       ]
     },
     {
-      id: 'layout', title: '参数卡布局', open: false, templates: ['param-panel'],
+      id: 'layout', title: '参数卡布局', open: true, templates: ['param-panel'],
       controls: [
         { type: 'anchor', label: '水印位置', path: 'layout.anchor' },
         { type: 'range', label: '外边距', path: 'layout.margin', min: 0, max: 160, step: 1, unit: '‰宽' },
@@ -1037,7 +1102,7 @@
       ]
     },
     {
-      id: 'text', title: '文字样式', open: false, templates: ['param-panel', 'polaroid', 'bottom-bar'],
+      id: 'text', title: '文字样式', open: true, templates: ['param-panel', 'polaroid', 'bottom-bar'],
       controls: [
         { type: 'select', label: '字体', path: 'text.family', options: state.FONT_OPTIONS },
         { type: 'range', label: '字号', path: 'text.size', min: 4, max: 60, step: 0.5, unit: '‰宽' },
@@ -1058,7 +1123,7 @@
       ]
     },
     {
-      id: 'panel', title: '参数卡底衬', open: false, templates: ['param-panel'],
+      id: 'panel', title: '参数卡底衬', open: true, templates: ['param-panel'],
       controls: [
         { type: 'seg', label: '底衬样式', path: 'panel.style', options: [
           { value: 'none', label: '无' }, { value: 'solid', label: '纯色' },
@@ -1077,14 +1142,14 @@
       ]
     },
     {
-      id: 'polaroid', title: '拍立得相纸', open: false, templates: ['polaroid'],
+      id: 'polaroid', title: '拍立得相纸', open: true, templates: ['polaroid'],
       controls: [
         { type: 'range', label: '相纸边框厚度', path: 'frame.thickness', min: 0, max: 80, step: 1, unit: '‰宽' },
         { type: 'color', label: '相纸颜色', path: 'frame.color' }
       ]
     },
     {
-      id: 'bottomBar', title: '底部白边', open: false, templates: ['bottom-bar'],
+      id: 'bottomBar', title: '底部白边', open: true, templates: ['bottom-bar'],
       controls: [
         { type: 'range', label: '白边高度', path: 'bottomBar.height', min: 36, max: 220, step: 1, unit: '‰宽' },
         { type: 'color', label: '白边颜色', path: 'bottomBar.color' },
@@ -1106,21 +1171,25 @@
       ]
     },
     {
-      id: 'film', title: '胶片齿孔', open: false, templates: ['film-frame'],
+      id: 'film', title: '胶片样式', open: true, templates: ['film-frame'],
       controls: [
         { type: 'seg', label: '底片类型', path: 'film.type', options: state.FILM_TYPES },
         { type: 'seg', label: '齿孔方向', path: 'film.orientation', options: state.FILM_ORIENTATIONS },
-        { type: 'select', label: '齿孔颜色', path: 'film.holeColor', options: state.FILM_HOLE_COLORS },
+        { type: 'select', label: '齿孔颜色', path: 'film.holeColor', options: state.FILM_HOLE_COLORS }
+      ]
+    },
+    {
+      id: 'filmPrint', title: '打印内容', open: true, templates: ['film-frame'],
+      controls: [
         { type: 'select', label: '打印风格', path: 'film.printStyle', options: state.FILM_PRINT_STYLES },
-        { type: 'text', label: '胶卷型号（留空用预设）', path: 'film.stock' },
-        { type: 'text', label: '片号起点（如 12）', path: 'film.frameNo' },
-        { type: 'range', label: '打印字号', path: 'film.textSize', min: 8, max: 60, step: 0.5, unit: '‰胶片宽',
-          hint: '只跟 24mm 画幅高成比例，与照片宽度无关。' },
+        { type: 'text', label: '胶卷型号', path: 'film.stock' },
+        { type: 'text', label: '片号起点', path: 'film.frameNo' },
+        { type: 'range', label: '打印字号', path: 'film.textSize', min: 8, max: 60, step: 0.5, unit: '‰胶片宽' },
         { type: 'range', label: '打印透明度', path: 'film.textOpacity', min: 0.35, max: 1, step: 0.01 }
       ]
     },
     {
-      id: 'dv', title: 'DV 界面', open: false, templates: ['dv-cam'],
+      id: 'dv', title: 'DV 界面', open: true, templates: ['dv-cam'],
       controls: [
         { type: 'range', label: 'OSD 字号', path: 'dv.size', min: 5, max: 40, step: 0.5, unit: '‰宽' },
         { type: 'range', label: 'OSD 透明度', path: 'dv.opacity', min: 0.2, max: 1, step: 0.01 },
@@ -1147,8 +1216,6 @@
         { type: 'range', label: '中心对焦框大小', path: 'dv.centerFocusSize', min: 6, max: 45, step: 1, unit: '%',
           when: function (s) { return s.dv.centerFocus !== 'none'; } },
         { type: 'toggle', label: '曝光标尺', path: 'dv.exposure' },
-        { type: 'range', label: '曝光值', path: 'dv.exposureValue', min: -3, max: 3, step: 0.1,
-          when: function (s) { return s.dv.exposure; } },
         { type: 'select', label: '曝光标尺位置', path: 'dv.exposurePosition', options: state.DV_EXPOSURE_POSITIONS,
           when: function (s) { return s.dv.exposure; } },
         { type: 'toggle', label: '三分构图线', path: 'dv.grid' },
@@ -1157,7 +1224,7 @@
       ]
     },
     {
-      id: 'tile', title: '平铺版权', open: false, templates: ['tile-copyright'],
+      id: 'tile', title: '平铺版权', open: true, templates: ['tile-copyright'],
       controls: [
         { type: 'select', label: '字体', path: 'text.family', options: state.FONT_OPTIONS },
         { type: 'color', label: '文字颜色', path: 'text.color', when: function (s) { return !s.text.autoContrast; } },
@@ -1169,8 +1236,8 @@
       ]
     },
     {
-      id: 'logo', title: '品牌徽标', open: false,
-      templates: ['param-panel', 'polaroid', 'bottom-bar', 'film-frame', 'tile-copyright'],
+      id: 'logo', title: '品牌徽标', open: true,
+      templates: ['param-panel', 'polaroid', 'bottom-bar', 'tile-copyright'],
       controls: [
         { type: 'seg', label: '徽标来源', path: 'logo.source', options: [
           { value: 'brand', label: '品牌徽标' }, { value: 'custom', label: '自定义图片' }, { value: 'none', label: '不显示' }
@@ -1250,6 +1317,18 @@
       details.dataset.section = section.id;
       var summary = document.createElement('summary');
       summary.appendChild(el('span', null, section.title));
+      if (typeof section.reset === 'function') {
+        var resetBtn = el('button', 'ctrl-reset', '↺');
+        resetBtn.type = 'button';
+        resetBtn.title = '恢复默认：' + section.title;
+        resetBtn.setAttribute('aria-label', resetBtn.title);
+        resetBtn.addEventListener('click', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          section.reset();
+        });
+        summary.appendChild(resetBtn);
+      }
       details.appendChild(summary);
       details.appendChild(body);
       root.appendChild(details);
@@ -1284,7 +1363,6 @@
     if (ctrl.path) wrap.dataset.path = ctrl.path;
     var label = el('div', 'ctrl-label');
     label.appendChild(el('span', 'label-text', labelText || ctrl.label || ''));
-    if (ctrl.hint) wrap.appendChild(el('div', 'ctrl-hint', ctrl.hint));
     wrap.appendChild(label);
     return { wrap: wrap, label: label };
   }
@@ -1331,20 +1409,18 @@
     return hidden;
   }
 
+  function resetTemplateSettings() {
+    settings.template = state.DEFAULTS.template;
+    refreshControls();
+    schedulePreview();
+    updateExportSummary();
+    state.saveSettingsDebounced(settings);
+    showToast('已恢复默认模板：' + templateName(settings.template));
+  }
+
   function buildTemplateControl(ctrl) {
     var wrap = el('div', 'ctrl-row');
     wrap.dataset.control = 'template';
-    var label = el('div', 'ctrl-label');
-    label.appendChild(el('span', 'label-text', ctrl.label));
-    addResetButton(label, ctrl, function () {
-      settings.template = state.DEFAULTS.template;
-      refreshControls();
-      schedulePreview();
-      updateExportSummary();
-      state.saveSettingsDebounced(settings);
-      showToast('已恢复默认模板：' + templateName(settings.template));
-    }, '模板');
-    wrap.appendChild(label);
     var grid = el('div', 'template-grid');
     var buttons = [];
     state.TEMPLATES.forEach(function (t) {
@@ -2284,7 +2360,6 @@
     var has = !!activeFile();
     $id('btn-export').disabled = !has || app.exporting;
     $id('btn-export-all').disabled = !app.files.length || app.exporting;
-    $id('btn-json-exif').disabled = !has;
     $id('btn-compare').disabled = !has;
     updateExifActions();
   }
@@ -2492,6 +2567,7 @@
     var body = el('div');
     var sections = [
       ['快捷键', 'Ctrl / Cmd + V 粘贴图片 · Ctrl / Cmd + S 导出当前图片 · Esc 关闭弹窗或取消导出'],
+      ['字段编辑', '左栏常用栏固定列出全部可上水印的字段，双击即可修改或填入；改的只是水印与界面，不写回原图、不影响导出元数据。「显示全部」为只读全量信息。'],
       ['读数范围', 'JPEG：EXIF（IFD0 / Exif / GPS / Interop / 缩略图）、XMP、IPTC、ICC、JFIF、量化表与霍夫曼表；PNG：全部关键块、eXIf、tEXt / zTXt / iTXt、pHYs、tIME、iCCP。厂商 MakerNote 仅展示存在与十六进制，不做私有解码。'],
       ['导出与元数据', 'JPEG 导出默认回写 EXIF / XMP / IPTC：Orientation 归 1，PixelXDimension / PixelYDimension 按新尺寸更新。PNG 导出保留 tEXt / zTXt / iTXt / eXIf / pHYs / tIME。WebP 暂不支持回写。'],
       ['品牌徽标', '内置的是按品牌字体风格排版的「字样徽标」，不是官方图形商标；需要官方 logo 时可在「品牌徽标」里导入自己的 PNG / SVG。'],
@@ -2571,6 +2647,31 @@
         schedulePreview();
       });
     });
+    $id('zoom-out').addEventListener('click', function () { setPreviewZoom(app.previewZoom - ZOOM_STEP); });
+    $id('zoom-in').addEventListener('click', function () { setPreviewZoom(app.previewZoom + ZOOM_STEP); });
+    $id('zoom-fit').addEventListener('click', function () { app.previewZoom = 1; refreshPreviewFit(); });
+    window.addEventListener('resize', function () {
+      if (!activeFile()) return;
+      if (app.zoomRaf) cancelAnimationFrame(app.zoomRaf);
+      app.zoomRaf = requestAnimationFrame(function () {
+        app.zoomRaf = 0;
+        refreshPreviewFit();
+      });
+    });
+    if (window.ResizeObserver) {
+      var stageWatch = $id('stage');
+      if (stageWatch) {
+        var ro = new ResizeObserver(function () {
+          if (!activeFile()) return;
+          if (app.zoomRaf) cancelAnimationFrame(app.zoomRaf);
+          app.zoomRaf = requestAnimationFrame(function () {
+            app.zoomRaf = 0;
+            refreshPreviewFit();
+          });
+        });
+        ro.observe(stageWatch);
+      }
+    }
     $id('btn-export').addEventListener('click', exportActive);
     $id('btn-export-all').addEventListener('click', exportAll);
     var exportSettingsBtn = $id('btn-export-settings');
@@ -2579,13 +2680,6 @@
     if (exifScopeBtn) exifScopeBtn.addEventListener('click', toggleExifScope);
     bindPresetBar();
     $id('btn-reset-exif').addEventListener('click', resetExifEdits);
-    $id('btn-json-exif').addEventListener('click', function () {
-      var file = activeFile();
-      if (!file) return;
-      var json = meta.reportToJson(file.parsed, file.report);
-      var blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
-      exporter.download(blob, baseName(file.name) + '-metadata.json');
-    });
     $id('exif-search').addEventListener('input', filterExif);
     $id('modal-close').addEventListener('click', closeModal);
     $id('modal').addEventListener('click', function (e) {
@@ -2595,8 +2689,6 @@
       app.cancelExport = true;
       showToast('已请求取消…');
     });
-    var galleryAdd = $id('btn-gallery-add');
-    if (galleryAdd) galleryAdd.addEventListener('click', openFilePicker);
 
     // 底部图片列表：图片过多时用鼠标滚轮左右滑动
     var galleryRow = $id('bottom-gallery');
@@ -2611,18 +2703,26 @@
     }
 
     var dragCount = 0;
+    var internalDrag = false;
     function hasFiles(e) {
       return e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types || [], 'Files') >= 0;
     }
+    document.addEventListener('dragstart', function (e) {
+      if (e.target && e.target.closest && e.target.closest('#bottom-gallery')) {
+        internalDrag = true;
+        e.preventDefault();
+      }
+    });
+    document.addEventListener('dragend', function () { internalDrag = false; });
     window.addEventListener('dragenter', function (e) {
-      if (!hasFiles(e)) return;
+      if (internalDrag || !hasFiles(e)) return;
       e.preventDefault();
       dragCount++;
       $id('drop-overlay').hidden = false;
       dragHighlight(true);
     });
     window.addEventListener('dragover', function (e) {
-      if (!hasFiles(e)) return;
+      if (internalDrag || !hasFiles(e)) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'copy';
     });
@@ -2635,12 +2735,19 @@
       }
     });
     window.addEventListener('drop', function (e) {
-      if (!hasFiles(e)) return;
+      if (internalDrag) {
+        internalDrag = false;
+        dragCount = 0;
+        $id('drop-overlay').hidden = true;
+        dragHighlight(false);
+        return;
+      }
+      if (!hasFiles(e) || !e.dataTransfer.files || !e.dataTransfer.files.length) return;
       e.preventDefault();
       dragCount = 0;
       $id('drop-overlay').hidden = true;
       dragHighlight(false);
-      if (e.dataTransfer.files && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+      addFiles(e.dataTransfer.files);
     });
 
     document.addEventListener('paste', function (e) {

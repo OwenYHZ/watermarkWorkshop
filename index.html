@@ -51,11 +51,9 @@
           <input type="search" id="exif-search" class="input search" placeholder="搜索字段 / 值 / 标签…" autocomplete="off">
           <button type="button" id="btn-exif-all" class="btn btn-mini" title="切换字段显示范围" aria-pressed="false">显示全部</button>
           <button type="button" id="btn-reset-exif" class="btn btn-mini" title="撤销当前图片的 EXIF 修改" disabled>复位</button>
-          <button type="button" id="btn-json-exif" class="btn btn-mini" title="导出元数据 JSON">JSON</button>
         </div>
-        <div class="exif-hint">常用栏固定列出所有可上水印的字段，双击即可修改或填入（不影响原图与导出元数据）；「显示全部」为只读全量信息</div>
         <div id="exif-body" class="exif-body">
-          <div class="placeholder">载入图片后在这里查看完整 EXIF、XMP、IPTC、ICC 与 PNG 文本块。</div>
+          <div class="placeholder">载入图片后可在这里填写水印字段</div>
         </div>
       </section>
     </aside>
@@ -78,10 +76,16 @@
             <span class="empty-icon" aria-hidden="true">◫</span>
             <strong class="empty-title">拖入一张照片</strong>
             <span class="empty-line">点击选择，或 Ctrl+V 粘贴</span>
-            <span class="empty-line">支持 JPG / PNG，读取完整 EXIF、XMP、IPTC、GPS 与 ICC。</span>
-            <span class="empty-note">所有处理都在本机浏览器内完成，不会上传。</span>
+            <span class="empty-note">本地处理，不上传</span>
           </button>
           <canvas id="preview" class="preview-canvas" hidden></canvas>
+        </div>
+        <div id="zoom-pill" class="zoom-pill" role="group" aria-label="预览缩放" hidden>
+          <button type="button" id="zoom-out" class="zoom-btn" title="缩小" aria-label="缩小">−</button>
+          <span class="zoom-sep" aria-hidden="true"></span>
+          <button type="button" id="zoom-fit" class="zoom-btn" title="自适应大小" aria-label="自适应大小">◯</button>
+          <span class="zoom-sep" aria-hidden="true"></span>
+          <button type="button" id="zoom-in" class="zoom-btn" title="放大" aria-label="放大">+</button>
         </div>
       </section>
 
@@ -120,8 +124,8 @@
   </main>
 
   <footer class="app-foot">
-    <span>提示：预览与导出使用同一套布局引擎；导出 JPEG 默认回写 EXIF（Orientation 归 1、尺寸同步更新）。</span>
-    <span>支持 Chrome / Edge 110+</span>
+    <span>预览与导出共用同一套布局引擎</span>
+    <span>Chrome / Edge 110+</span>
   </footer>
 
   <div id="toast" class="toast" role="status" aria-live="polite"></div>

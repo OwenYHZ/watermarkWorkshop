@@ -182,6 +182,15 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const canonText = canon.ops.filter((op) => op.kind === 'text').find((op) => op.text.indexOf("'24") === 0);
   assert.ok(canonText && canonText.shadowBlur > 0, 'Canon 右下日期带光晕');
   assert.ok(canonText.x > canon.imageRect.x + canon.imageRect.w * 0.7, '日期在右侧');
+  const canonBox = render.textBounds(canonText);
+  const mm = canon.imageRect.h / 24;
+  assert.ok(canon.imageRect.x + canon.imageRect.w - canonBox.x1 > mm * 2.4, 'Prima 日期往左内缩');
+  assert.ok(canon.imageRect.y + canon.imageRect.h - canonBox.y1 > mm * 1.2, 'Prima 日期微微上移');
+
+  assert.equal(settings.film.orientation, 'horizontal', '默认横向齿孔');
+  assert.ok(!compose({ settings }).ops.some((op) => op.kind === 'image' && op.role === 'logo'),
+    '胶片不再绘制品牌徽标');
+  assert.deepEqual(state.FILM_ORIENTATIONS.map((o) => o.value), ['horizontal', 'vertical']);
 
   settings.film.printStyle = 'none';
   const noPrint = compose({ settings });
@@ -235,6 +244,11 @@ test('胶片：片长两端各多 0.5mm 黑边，Minolta 紧贴右缘并垂直�
   assert.ok(Math.abs(scene.imageRect.x - 0.5 * mm) <= 0.5, '左侧多出 0.5mm');
   assert.ok(Math.abs((scene.output.w - scene.imageRect.x - scene.imageRect.w) - 0.5 * mm) <= 0.5,
     '右侧多出 0.5mm');
+
+  const pentax = compose({ settings: Object.assign({}, settings, { film: Object.assign({}, settings.film, { printStyle: 'pentax' }) }), meta: { exposureModeText: 'M', exposureCompText: '-1.0' } });
+  const pentaxTexts = pentax.ops.filter((op) => op.kind === 'text').map((op) => op.text);
+  assert.ok(pentaxTexts.includes('M'), 'Pentax 打印真实档位');
+  assert.ok(pentaxTexts.includes('-1.0'), 'Pentax 打印真实曝光补偿');
 
   const minolta = scene.ops.find((op) => op.kind === 'text' && op.shadowBlur > 0);
   assert.ok(minolta, 'Minolta 参数存在');
@@ -592,19 +606,27 @@ test('DV：取景框在最外侧、上下对称，并含分辨率/曝光/中心�
   assert.ok(circle.ops.some((op) => op.kind === 'rect' && op.radius > 0 && !op.fill));
 
   settings.dv.exposure = true;
-  settings.dv.exposureValue = 0;
-  const marker0 = compose({ settings }).ops.find((op) => op.kind === 'rect' && op.fill && op.h < 20);
-  settings.dv.exposureValue = 2;
-  const marker2 = compose({ settings }).ops.find((op) => op.kind === 'rect' && op.fill && op.h < 20);
-  assert.ok(marker0 && marker2 && marker0.y !== marker2.y, '曝光值改变标记位置');
+  const markerOf = (ev) => compose({ settings, meta: { exposureComp: ev } })
+    .ops.find((op) => op.kind === 'rect' && op.fill && op.h < 20);
+  const marker0 = markerOf(0);
+  const markerPlus = markerOf(2);
+  const markerMinus = markerOf(-2);
+  assert.ok(marker0 && markerPlus && markerMinus, '曝光标尺标记存在');
+  assert.ok(markerPlus.y < marker0.y && marker0.y < markerMinus.y, '真实曝光补偿驱动标记位置');
+
+  // DV 必须扁平：任何图元都不带阴影
+  const flat = compose({ settings });
+  const shadowed = flat.ops.filter((op) => op.shadow || op.shadowBlur > 0 || op.shadowColor);
+  assert.equal(shadowed.length, 0, 'DV OSD 全部无阴影');
+  assert.ok(flat.ops.filter((op) => op.kind === 'path').every((op) => !op.shadow), '取景框无阴影');
 });
 
 test('旧设置迁移：日期时间字段、DV 键、胶片边框与反转片', () => {
   const migrated = state.sanitize({
     fields: { datetime: false },
     content: { dateFormat: 'date' },
-    dv: { timestamp: true, dateFormat: 'date', focus: false },
-    film: { type: 'reversal', border: 100 }
+    dv: { timestamp: true, dateFormat: 'date', focus: false, exposureValue: 2 },
+    film: { type: 'reversal', border: 100, orientation: 'auto' }
   });
   assert.equal(migrated.fields.date, false);
   assert.equal(migrated.fields.time, false);
@@ -615,14 +637,19 @@ test('旧设置迁移：日期时间字段、DV 键、胶片边框与反转片',
   assert.equal(migrated.dv.frame, false);
   assert.equal(migrated.dv.dateStyle, 'iso');
   assert.equal(migrated.film.type, 'color-negative');
+  assert.equal(migrated.film.orientation, 'horizontal', '旧的自动齿孔方向迁移为横向');
+  assert.equal('exposureValue' in migrated.dv, false, '旧的 DV 手填曝光值被丢弃');
   assert.equal('border' in migrated.film, false);
   assert.equal('datetime' in migrated.fields, false);
 });
 
-test('水印字段清单：固定 15 项，与渲染对应，且均可编辑', async () => {
+test('水印字段清单：固定 17 项，分 4 组，与渲染对应且均可编辑', async () => {
   const fields = meta.WATERMARK_FIELDS;
   assert.ok(Array.isArray(fields), 'WATERMARK_FIELDS 已导出');
-  assert.equal(fields.length, 15, '正好 15 项');
+  assert.equal(fields.length, 17, '正好 17 项');
+  assert.deepEqual(meta.WATERMARK_GROUPS.map((g) => g.title),
+    ['相机与器材', '曝光参数', '文件信息', '地理位置'], '四个分组');
+  assert.ok(fields.every((f) => meta.WATERMARK_GROUPS.some((g) => g.id === f.group)), '每项都有合法分组');
 
   // 字段名不重复
   const names = fields.map((f) => f.field);
@@ -647,7 +674,8 @@ test('水印字段清单：固定 15 项，与渲染对应，且均可编辑', a
     aperture: 'f/2', shutter: '1/250s', iso: 'ISO 400',
     datetime: '2024-05-01 12:34:56', offset: '+08:00',
     lat: '30.2701', lon: '120.1551', alt: '40 米',
-    artist: '作者', copyright: '© 2024', filename: 'renamed.jpg'
+    artist: '作者', copyright: '© 2024', filename: 'renamed.jpg',
+    exposureComp: '+0.7', exposureMode: 'av'
   };
   let changed = 0;
   fields.forEach((f) => {
@@ -655,7 +683,20 @@ test('水印字段清单：固定 15 项，与渲染对应，且均可编辑', a
     assert.equal(res.ok, true, f.field + ' 可写入：' + (res.error || ''));
     changed += 1;
   });
-  assert.equal(changed, 15, '全部字段可写');
+  assert.equal(changed, 17, '全部字段可写');
+
+  // 曝光补偿与档位：真实值可写、可按品牌显示
+  assert.equal(summary.exposureComp, 0.7);
+  assert.equal(summary.exposureCompText, '+0.7');
+  assert.equal(meta.formatFieldDisplay('exposureComp', summary), '+0.7 EV');
+  assert.equal(summary.exposureMode, 'A');
+  assert.equal(summary.make, 'Leica');
+  assert.equal(meta.formatFieldDisplay('exposureMode', summary), 'A', '非佳能显示 A');
+  const canonSummary = meta.buildSummary({ format: 'jpeg', dimensions: { width: 10, height: 10 }, file: { name: 'c.jpg', size: 1 }, exif: null, warnings: [] });
+  canonSummary.make = 'Canon';
+  meta.applyFieldEdit(canonSummary, 'exposureMode', 'tv');
+  assert.equal(meta.formatFieldDisplay('exposureMode', canonSummary), 'Tv', '佳能显示 Tv');
+  assert.equal(meta.applyFieldEdit(canonSummary, 'exposureComp', '±0.0').display, '±0.0 EV');
 
   // filename 真的写进了 summary（不动真实文件名）
   assert.equal(summary.filename, 'renamed.jpg');

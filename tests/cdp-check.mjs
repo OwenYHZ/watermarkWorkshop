@@ -1030,8 +1030,9 @@ async function main() {
         output: film.output,
         background: film.background && film.background.color,
         holes: film.ops.filter((op) => op.kind === 'rect' && op.fill === '#F4F1E8').length,
-        horizontalHoles: film.ops.filter((op) => op.kind === 'rect' && op.fill === '#F4F1E8')
-          .every((op) => op.w > op.h),
+        orientation: WM.ui.settings.film.orientation,
+        holeShapeOk: film.ops.filter((op) => op.kind === 'rect' && op.fill === '#F4F1E8')
+          .every((op) => WM.ui.settings.film.orientation === 'vertical' ? op.w > op.h : op.w < op.h),
         texts: film.ops.filter((op) => op.kind === 'text').map((op) => ({
           text: op.text, color: op.color, blur: op.shadowBlur
         }))
@@ -1044,7 +1045,18 @@ async function main() {
         .filter((op) => op.kind === 'rect' && op.fill === '#000000').length;
       selectValue('film.holeColor', 'white');
       await sleep(300);
-      result.film.pentaxFields = ['P', '±0.0', '400', '250', 'F2.8'];
+      // 片号间隔在更长的片长上验证（竖向 1200px 才有足够孔位）
+      clickSeg('film.orientation', 'vertical');
+      await sleep(380);
+      result.film.labels = WM.ui.state.lastScene.ops
+        .filter((op) => op.kind === 'text' && (op.text === '12' || op.text === '12A'))
+        .map((op) => op.text);
+      clickSeg('film.orientation', 'horizontal');
+      await sleep(320);
+      const filmMeta = WM.ui.state.lastScene.tokens.meta;
+      result.film.pentaxMode = filmMeta.exposureModeText || 'P';
+      result.film.pentaxComp = filmMeta.exposureCompText || '±0.0';
+      result.film.pentaxFields = [result.film.pentaxMode, result.film.pentaxComp, '400'];
       // 演示照片是竖构图；齿孔方向是 seg 控件，这里显式切到横向再验证 Minolta 竖排。
       clickSeg('film.orientation', 'horizontal');
       await sleep(300);
@@ -1086,7 +1098,7 @@ async function main() {
           return b.x0 < -1 || b.y0 < -1 || b.x1 > vFilm.output.w + 1 || b.y1 > vFilm.output.h + 1;
         }).map((op) => op.text)
       };
-      clickSeg('film.orientation', 'auto');
+      clickSeg('film.orientation', 'horizontal');
       await sleep(300);
       selectValue('film.printStyle', 'canon-date');
       await sleep(400);
@@ -1199,13 +1211,13 @@ async function main() {
 
       // EXIF 精简：默认隐藏字段数 > 0，按钮可切到「显示全部」。
       const scopeBtn = document.getElementById('btn-exif-all');
-      // 常用模式：只有一张「水印字段」卡，固定 15 行且全部可编辑
+      // 常用模式：4 张分组卡，固定 17 行且全部可编辑
       const scopedGroups = document.querySelectorAll('#exif-body .exif-group');
       const scopedRows = document.querySelectorAll('#exif-body .exif-row');
       const scopedEditable = document.querySelectorAll('#exif-body .exif-value.editable');
       const beforeRows = scopedRows.length;
-      const scopedTitle = scopedGroups[0]
-        ? (scopedGroups[0].querySelector('summary span') || {}).textContent || '' : '';
+      const scopedTitles = Array.from(scopedGroups).map((g) =>
+        (g.querySelector('summary span') || {}).textContent || '');
       scopeBtn.click();
       await sleep(320);
       const afterRows = document.querySelectorAll('#exif-body .exif-row').length;
@@ -1215,7 +1227,7 @@ async function main() {
         scopedGroupCount: scopedGroups.length,
         scopedRows: scopedRows.length,
         scopedEditable: scopedEditable.length,
-        scopedTitle,
+        scopedTitles,
         expectedFields: (WM.meta.WATERMARK_FIELDS || []).length,
         rawEditable,
         rawGroups,
@@ -1240,6 +1252,87 @@ async function main() {
       await sleep(250);
       result.exifScope.restoredRows = document.querySelectorAll('#exif-body .exif-row').length;
 
+      // 预览缩放：− 缩小 / ◯ 自适应 / 自适应下 + 不再放大
+      const canvasEl = document.getElementById('preview');
+      const canvasH = () => Math.round(canvasEl.getBoundingClientRect().height);
+      const fitH = canvasH();
+      document.getElementById('zoom-out').click();
+      await sleep(120);
+      document.getElementById('zoom-out').click();
+      await sleep(220);
+      const zoomedH = canvasH();
+      const zoomBtnState = {
+        out: document.getElementById('zoom-out').disabled,
+        inn: document.getElementById('zoom-in').disabled
+      };
+      document.getElementById('zoom-fit').click();
+      await sleep(220);
+      const restoredH = canvasH();
+      const innAtFit = document.getElementById('zoom-in').disabled;
+      document.getElementById('zoom-in').click();
+      await sleep(220);
+      const maxH = canvasH();
+      result.zoom = { fitH, zoomedH, restoredH, maxH, zoomBtnState, innAtFit, pill: !!document.getElementById('zoom-pill') };
+
+      // 所有二级卡片默认展开；胶片拆成「胶片样式 / 打印内容」
+      const sectionState = {};
+      for (const tid of WM.state.TEMPLATES.map((t) => t.id)) {
+        document.querySelector('.template-card[data-id="' + tid + '"]').click();
+        await sleep(320);
+        const secs = Array.from(document.querySelectorAll('#controls .ctrl-section'))
+          .filter((el) => !el.hidden);
+        sectionState[tid] = {
+          sections: secs.length,
+          allOpen: secs.every((el) => el.open),
+          titles: secs.map((el) => el.querySelector('summary span').textContent)
+        };
+      }
+      result.sections = sectionState;
+
+      // 显示内容按字段条件出现
+      document.querySelector('.template-card[data-id="param-panel"]').click();
+      await sleep(320);
+      const chip = (f) => document.querySelector('#controls .chip[data-field="' + f + '"]');
+      chip('location').click();
+      await sleep(220);
+      const locationHidden = document.querySelector('#controls .ctrl-row[data-path="content.locationMode"]').classList.contains('hidden');
+      chip('custom').click();
+      await sleep(220);
+      const customShown = !document.querySelector('#controls .ctrl-row[data-control="textarea"]').classList.contains('hidden');
+      chip('location').click();
+      chip('custom').click();
+      await sleep(220);
+      result.conditions = { locationHidden, customShown };
+
+      // DV 全扁平
+      document.querySelector('.template-card[data-id="dv-cam"]').click();
+      await sleep(420);
+      const dvScene = WM.ui.state.lastScene;
+      result.dvFlat = {
+        shadowed: dvScene.ops.filter((op) => op.shadow || op.shadowBlur > 0 || op.shadowColor).length,
+        sections: Array.from(document.querySelectorAll('#controls .ctrl-section'))
+          .filter((el) => !el.hidden).map((el) => el.querySelector('summary span').textContent)
+      };
+
+      // 底栏：无「添加」瓦片；拖拽不重复添加；空列表虚线框可点
+      const beforeCount = WM.ui.state.files.length;
+      result.dragGuard = {
+        addTile: !!document.querySelector('.gallery-add'),
+        imgDraggable: Array.from(document.querySelectorAll('#bottom-gallery .file-card img'))
+          .some((im) => im.draggable === true),
+        count: beforeCount
+      };
+      while (document.querySelector('#bottom-gallery .file-card .fc-x')) {
+        document.querySelector('#bottom-gallery .file-card .fc-x').click();
+        await sleep(160);
+      }
+      const emptyBtn = document.querySelector('.gallery-empty');
+      result.emptyGallery = {
+        button: emptyBtn ? emptyBtn.tagName : '',
+        text: emptyBtn ? emptyBtn.textContent.trim() : '',
+        files: WM.ui.state.files.length
+      };
+
       result.banner = (document.getElementById('wm-error-banner') || {}).textContent || '';
       return JSON.stringify(result);
     })()`;
@@ -1254,7 +1347,7 @@ async function main() {
       parseFloat(style.paddingRight) >= 34;
     const filmTexts = result.film ? result.film.texts : [];
     const stock = filmTexts.find((t) => t.text === 'PORTRA 400');
-    const printItem = filmTexts.find((t) => t.text === 'P');
+    const printItem = filmTexts.find((t) => t.text === (result.film && result.film.pentaxMode ? result.film.pentaxMode : 'P'));
     const healthy = styleHealthy &&
       result.dateToggle && result.dateOff && result.dateOff.value === false && result.dateOff.changed &&
       result.dateStyle && result.dateStyleValue === 'cn' && result.dateStyleText &&
@@ -1266,7 +1359,7 @@ async function main() {
       result.bottomBar.afterLeft && result.bottomBar.afterLeft.logoX > result.bottomBar.afterLeft.lineX &&
       result.bottomBar.noLogoLine === false &&
       result.film && result.film.background === '#0B0B0B' && result.film.holes >= 8 &&
-      result.film.horizontalHoles && result.film.stockCount === 1 &&
+      result.film.holeShapeOk && result.film.stockCount === 1 &&
       result.film.labels.indexOf('12') >= 0 && result.film.labels.indexOf('12A') >= 0 &&
       result.film.blackHoles >= 8 &&
       result.film.pentaxFields.every((t) => filmTexts.some((op) => op.text === t)) &&
@@ -1296,10 +1389,27 @@ async function main() {
       result.presetBar.popoverOpened && result.presetBar.ariaExpanded === 'true' &&
       result.presetBar.lastChildIsImport && result.presetBar.lastChildText === '导入预设' &&
       result.presetBar.popoverClosed &&
-      result.exifScope && result.exifScope.scopedGroupCount === 1 &&
-      result.exifScope.scopedTitle.indexOf('水印字段') >= 0 &&
+      result.exifScope && result.exifScope.scopedGroupCount === 4 &&
+      result.exifScope.scopedTitles.join(',') === '相机与器材,曝光参数,文件信息,地理位置' &&
       result.exifScope.scopedRows === result.exifScope.expectedFields &&
       result.exifScope.scopedEditable === result.exifScope.expectedFields &&
+      result.exifScope.rawGroups > 1 && result.exifScope.rawEditable === 0 &&
+      result.zoom && result.zoom.pill && result.zoom.zoomedH < result.zoom.fitH &&
+      Math.abs(result.zoom.restoredH - result.zoom.fitH) <= 2 &&
+      Math.abs(result.zoom.maxH - result.zoom.fitH) <= 2 &&
+      result.zoom.zoomBtnState.out === false && result.zoom.zoomBtnState.inn === false &&
+      result.zoom.innAtFit === true &&
+      result.sections && Object.keys(result.sections).length === 6 &&
+      Object.keys(result.sections).every((k) => result.sections[k].allOpen) &&
+      result.sections['film-frame'].sections === 3 &&
+      result.sections['film-frame'].titles.indexOf('胶片样式') >= 0 &&
+      result.sections['film-frame'].titles.indexOf('打印内容') >= 0 &&
+      result.sections['dv-cam'].sections === 2 &&
+      result.conditions && result.conditions.locationHidden && result.conditions.customShown &&
+      result.dvFlat && result.dvFlat.shadowed === 0 &&
+      result.dragGuard && result.dragGuard.addTile === false && result.dragGuard.imgDraggable === false &&
+      result.emptyGallery && result.emptyGallery.button === 'BUTTON' &&
+      result.emptyGallery.text.indexOf('还没有图片') >= 0 && result.emptyGallery.files === 0 &&
       result.exifScope.rawGroups > 1 && result.exifScope.rawEditable === 0 &&
       result.exifScope.afterRows > result.exifScope.beforeRows &&
       result.exifScope.labelAfter === '只看常用' && result.exifScope.pressed === 'true' &&
@@ -1430,8 +1540,8 @@ async function main() {
       result.light.panelBg !== result.dark.panelBg &&
       result.light.topbarBg !== result.dark.topbarBg &&
       result.rightCard && result.rightCard.radius && result.rightCard.borderStyle &&
-      result.exifFixed && result.exifFixed.groups === 1 &&
-      result.exifFixed.rows === 15 && result.exifFixed.editable === 15 &&
+      result.exifFixed && result.exifFixed.groups === 4 &&
+      result.exifFixed.rows === 17 && result.exifFixed.editable === 17 &&
       !result.banner;
     stopChrome();
     process.exit(healthy ? 0 : 1);
@@ -1483,7 +1593,7 @@ async function main() {
 
     // 竖向齿孔（演示照片是竖构图，auto 即为竖向）：Minolta / Canon 随画幅一起旋转。
     await evaluate(`(() => {
-      const orient = document.querySelector('#controls .ctrl-row[data-path="film.orientation"] .seg-btn[data-value="auto"]');
+      const orient = document.querySelector('#controls .ctrl-row[data-path="film.orientation"] .seg-btn[data-value="horizontal"]');
       if (orient) orient.click();
       const el = document.querySelector('#controls select[data-path="film.printStyle"]');
       if (el) { el.value = 'minolta'; el.dispatchEvent(new Event('change', { bubbles: true })); }
@@ -1507,7 +1617,7 @@ async function main() {
     })()`);
     await captureState('film-horizontal-minolta');
     await evaluate(`(() => {
-      const orient = document.querySelector('#controls .ctrl-row[data-path="film.orientation"] .seg-btn[data-value="auto"]');
+      const orient = document.querySelector('#controls .ctrl-row[data-path="film.orientation"] .seg-btn[data-value="horizontal"]');
       if (orient) orient.click();
       return true;
     })()`);

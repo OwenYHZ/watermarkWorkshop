@@ -92,7 +92,7 @@
     },
     film: {
       type: 'color-negative',
-      orientation: 'auto',
+      orientation: 'horizontal',
       holeColor: 'white',
       printStyle: 'pentax',
       stock: '',
@@ -113,7 +113,6 @@
       resolution: true,
       resolutionLabel: '4K',
       exposure: true,
-      exposureValue: 0,
       exposurePosition: 'left',
       showDate: true,
       showTime: true,
@@ -188,7 +187,6 @@
   ];
 
   var FILM_ORIENTATIONS = [
-    { value: 'auto', label: '自动（横图上下 / 竖图左右）' },
     { value: 'horizontal', label: '横向齿孔（上下）' },
     { value: 'vertical', label: '竖向齿孔（左右）' }
   ];
@@ -365,11 +363,13 @@
       delete next.dv.timestamp;
       delete next.dv.dateFormat;
       delete next.dv.focus;
+      delete next.dv.exposureValue;
       // DV 的 OSD 固定为白色，旧的调色字段直接丢弃。
       delete next.dv.color;
     }
     if (next.film && typeof next.film === 'object') {
       if (next.film.type === 'reversal') next.film.type = 'color-negative';
+      if (next.film.orientation === 'auto') next.film.orientation = 'horizontal';
       if (next.film.printStyle === undefined && next.film.textMode !== undefined) {
         if (next.film.textMode === 'none') next.film.printStyle = 'none';
         else if (next.film.textMode === 'edge') next.film.printStyle = 'pentax';
@@ -408,7 +408,7 @@
     if (!inOptions(DATE_STYLES, s.content.dateStyle)) s.content.dateStyle = 'iso';
     if (!inOptions(TIME_STYLES, s.content.timeStyle)) s.content.timeStyle = '24hms';
     if (!inOptions(FILM_TYPES, s.film.type)) s.film.type = 'color-negative';
-    if (['auto', 'horizontal', 'vertical'].indexOf(s.film.orientation) < 0) s.film.orientation = 'auto';
+    if (['horizontal', 'vertical'].indexOf(s.film.orientation) < 0) s.film.orientation = 'horizontal';
     if (!inOptions(FILM_HOLE_COLORS, s.film.holeColor)) s.film.holeColor = 'white';
     if (!inOptions(FILM_PRINT_STYLES, s.film.printStyle)) s.film.printStyle = 'pentax';
     if (!inOptions(DV_RESOLUTIONS, s.dv.resolutionLabel)) s.dv.resolutionLabel = '4K';
@@ -454,7 +454,6 @@
     s.dv.frameMargin = clampNum(s.dv.frameMargin, 4, 80, 18);
     s.dv.padding = clampNum(s.dv.padding, 4, 150, 34);
     s.dv.batteryLevel = clampNum(s.dv.batteryLevel, 0, 100, 78);
-    s.dv.exposureValue = clampNum(s.dv.exposureValue, -3, 3, 0);
     s.dv.centerFocusSize = clampNum(s.dv.centerFocusSize, 6, 45, 18);
     s.dv.counterText = String(s.dv.counterText || '00:12:34').slice(0, 20);
     s.dv.modeLabel = String(s.dv.modeLabel || 'AUTO').slice(0, 12);

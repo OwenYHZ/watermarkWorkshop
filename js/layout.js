@@ -221,8 +221,7 @@
         resolution: dv.resolution !== false,
         resolutionLabel: dv.resolutionLabel || '4K',
         exposure: dv.exposure !== false,
-        exposureValue: num(dv.exposureValue, 0),
-        exposurePosition: dv.exposurePosition || 'left',
+          exposurePosition: dv.exposurePosition || 'left',
         showDate: dv.showDate !== false,
         showTime: dv.showTime !== false,
         dateStyle: dv.dateStyle || 'iso',
@@ -271,7 +270,11 @@
       coordText: meta.coordText || '',
       artist: meta.artist || '',
       copyright: meta.copyright || '',
-      filename: meta.filename || ''
+      filename: meta.filename || '',
+      exposureComp: meta.exposureComp,
+      exposureCompText: meta.exposureCompText || '',
+      exposureMode: meta.exposureMode || '',
+      exposureModeText: meta.exposureModeText || ''
     };
   }
 
@@ -1130,7 +1133,7 @@
    * ------------------------------------------------------------------ */
   function templateFilm(scene, imageW, imageH, s, tokens, u, family, measure, opts) {
     var pal = FILM_PALETTES[s.film.type] || FILM_PALETTES['color-negative'];
-    var vertical = s.film.orientation === 'auto' ? imageW < imageH : s.film.orientation === 'vertical';
+    var vertical = s.film.orientation === 'vertical';
     var acrossDim = vertical ? imageW : imageH;
     var alongDim = vertical ? imageH : imageW;
 
@@ -1286,8 +1289,8 @@
           // Pentax MZS：上侧每个齿孔间隙一个字段，顺序固定。
           var gapWidth = Math.max(0.15 * mm, step - holeAlong);
           var pentaxFields = [
-            'P',
-            '±0.0',
+            tokens.meta.exposureModeText || 'P',
+            tokens.meta.exposureCompText || '±0.0',
             numericIso(),
             numericShutter(),
             apertureText()
@@ -1323,21 +1326,16 @@
             var dateText = "'" + String(d.y).slice(-2) + ' ' + pad2(d.m) + ' ' + pad2(d.d);
             var dateLine = fitFilmLine(dateText, printSize * 1.05, imgW * 0.45);
             if (dateLine) {
-              var dateGap = 0.8 * mm;
+              var dateGapX = 3.2 * mm;
+              var dateGapY = 1.8 * mm;
               pushFilmText(dateLine.text,
-                imgX + imgW - dateGap,
-                imgY + imgH - dateGap,
+                imgX + imgW - dateGapX,
+                imgY + imgH - dateGapY,
                 dateLine.size, printColor, edgeOpacity, 0, true, 'right');
             }
           }
         }
       }
-    }
-
-    if (opts.logoEnabled) {
-      var logoH = s.logo.height * filmAcross / 1000 * 0.8;
-      var logoW = logoH * opts.logoAspect;
-      ops.push(logoOp(imgX + imgW - 0.8 * mm - logoW, imgY + 0.8 * mm, logoW, logoH, s));
     }
 
     if (!vertical) {
@@ -1407,7 +1405,7 @@
       if (!text) return;
       var payload = {
         align: align || 'left',
-        shadow: true,
+        shadow: false,
         tracking: sz * 0.04
       };
       if (extra) {
@@ -1450,10 +1448,7 @@
           lineCap: 'butt',
           lineJoin: 'miter',
           miterLimit: 10,
-          shadow: true,
-          shadowColor: rgba('#000000', 0.45 * opacity),
-          shadowBlur: Math.max(1, frameWidth * 0.8),
-          shadowOffsetY: 0
+          shadow: false
         });
       });
     }
@@ -1576,7 +1571,8 @@
         var tickLen = ev === 0 ? size * 0.85 : size * 0.42;
         scene.ops.push({ kind: 'line', x1: scaleX - tickLen / 2, y1: tickY, x2: scaleX + tickLen / 2, y2: tickY, color: scaleColor, width: Math.max(1, u * 0.9) });
       }
-      var markerY = scaleTop + (3 - clamp(s.dv.exposureValue, -3, 3)) / 6 * scaleH;
+      var evValue = isFinite(tokens.meta.exposureComp) ? tokens.meta.exposureComp : 0;
+      var markerY = scaleTop + (3 - clamp(evValue, -3, 3)) / 6 * scaleH;
       scene.ops.push({
         kind: 'rect', x: scaleX - size * 0.34, y: markerY - size * 0.14,
         w: size * 0.68, h: size * 0.28, radius: size * 0.05,
