@@ -36,6 +36,7 @@
     exifShowAll: false,
     previewZoom: 1,
     previewFit: { w: 0, h: 0 },
+    mockAspect: 1.5,
     zoomRaf: 0,
     panelWidths: { left: 336, right: 378 },
     panelApplied: { left: 336, right: 378 },
@@ -893,8 +894,8 @@
       canvas.hidden = true;
       empty.hidden = false;
       applyPhotoTheme(null);
-      applyEmptyFit();
       renderMockPreview();
+      applyEmptyFit();
       $id('preview-dims').textContent = '—';
       $id('preview-brand').textContent = '';
       $id('preview-template').textContent = templateName(settings.template);
@@ -1047,9 +1048,10 @@
     var availW = stage.clientWidth - padX;
     var availH = stage.clientHeight - padY;
     if (availW <= 0 || availH <= 0) return;
+    var aspect = app.mockAspect > 0 ? app.mockAspect : 1.5;
     var w = availW;
-    var h = w * 2 / 3;
-    if (h > availH) { h = availH; w = h * 3 / 2; }
+    var h = w / aspect;
+    if (h > availH) { h = availH; w = h * aspect; }
     box.style.width = Math.max(1, Math.round(w)) + 'px';
     box.style.height = Math.max(1, Math.round(h)) + 'px';
   }
@@ -1119,6 +1121,7 @@
     var hasTemplate = !!settings.template;
     if (box) box.classList.toggle('has-template', hasTemplate);
     if (!hasTemplate) {
+      app.mockAspect = 1.5;
       canvas.width = 1200;
       canvas.height = 800;
       canvas.getContext('2d').clearRect(0, 0, 1200, 800);
@@ -1128,36 +1131,22 @@
     var photo = mockPhotoCanvas();
     var summary = mockSummary();
     var fmt = previewDateFormatter();
-    // 二分搜索照片宽度，让模板整体输出尽量接近 3:2，
-    // 这样白边/胶片/拍立得的外框也能完整铺满这块参考照片。
-    function composeMock(w) {
-      return layout.compose({
-        imageW: w,
-        imageH: 800,
-        meta: summary,
-        settings: settings,
-        brandName: 'Canon',
-        logoAspect: 3,
-        logoEnabled: false,
-        luminance: 0.55,
-        remoteLocation: '',
-        formatDateOnly: fmt.date,
-        formatTimeOnly: fmt.time
-      });
-    }
-    var lo = 240;
-    var hi = 4200;
-    var scene = composeMock(1200);
-    var bestDiff = Math.abs(scene.output.w / scene.output.h - 1.5);
-    for (var i = 0; i < 10; i++) {
-      var mid = Math.round((lo + hi) / 2);
-      var trial = composeMock(mid);
-      var ratio = trial.output.w / trial.output.h;
-      var diff = Math.abs(ratio - 1.5);
-      if (diff < bestDiff) { bestDiff = diff; scene = trial; }
-      if (diff < 0.002) break;
-      if (ratio < 1.5) lo = mid; else hi = mid;
-    }
+    // 参考照片固定 1200×800（3:2）；外框由模板自己决定，
+    // 成品整体再按预览区自适应，照片占比因此会随外框变大而变小。
+    var scene = layout.compose({
+      imageW: 1200,
+      imageH: 800,
+      meta: summary,
+      settings: settings,
+      brandName: 'Canon',
+      logoAspect: 3,
+      logoEnabled: false,
+      luminance: 0.55,
+      remoteLocation: '',
+      formatDateOnly: fmt.date,
+      formatTimeOnly: fmt.time
+    });
+    app.mockAspect = scene.output.w / scene.output.h;
     render.draw(canvas, scene, { photo: photo, logo: null });
     app.lastScene = scene;
   }

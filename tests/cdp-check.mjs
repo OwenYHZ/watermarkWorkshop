@@ -1739,63 +1739,105 @@ async function main() {
     const expression = `(async () => {
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
       const box = document.getElementById('empty-state');
-      const rect = box.getBoundingClientRect();
-      const cs = getComputedStyle(box);
       const canvas = document.getElementById('empty-canvas');
-      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-      let canvasFilled = false;
-      for (let i = 3; i < data.length; i += 4) {
-        if (data[i] !== 0) { canvasFilled = true; break; }
-      }
+      const cs = getComputedStyle(box);
       const card = (id) => document.querySelector('.template-card[data-id="' + id + '"]');
       const activeCount = () => document.querySelectorAll('.template-card.active').length;
+      const filled = () => {
+        const d = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+        for (let i = 3; i < d.length; i += 4) {
+          if (d[i] !== 0) return true;
+        }
+        return false;
+      };
+      const boxRatio = () => {
+        const r = box.getBoundingClientRect();
+        return Number((r.width / r.height).toFixed(3));
+      };
+      const promptVisible = () => getComputedStyle(document.querySelector('.empty-copy')).display !== 'none';
+      const sceneInfo = () => {
+        const s = WM.ui.state.lastScene;
+        if (!s) return { ops: 0, ratio: 0, photoRatio: 0 };
+        return {
+          ops: s.ops.length,
+          ratio: Number((s.output.w / s.output.h).toFixed(3)),
+          photoRatio: Number((s.imageRect.w / s.imageRect.h).toFixed(3))
+        };
+      };
 
-      const promptDisplay = () => getComputedStyle(document.querySelector('.empty-copy')).display;
-      card('bottom-bar').click();
-      await sleep(500);
-      const data2 = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-      let canvasAfterSelect = false;
-      for (let i = 3; i < data2.length; i += 4) {
-        if (data2[i] !== 0) { canvasAfterSelect = true; break; }
-      }
-      const selectedScene = WM.ui.state.lastScene;
-      const afterSelect = {
+      const initial = {
         template: WM.ui.settings.template,
         active: activeCount(),
-        canvasFilled: canvasAfterSelect,
-        hasTemplateClass: box.classList.contains('has-template'),
-        promptVisible: promptDisplay() !== 'none',
-        ops: selectedScene ? selectedScene.ops.length : 0,
-        ratio: selectedScene ? Number((selectedScene.output.w / selectedScene.output.h).toFixed(3)) : 0
+        ratio: boxRatio(),
+        canvasFilled: filled(),
+        promptVisible: promptVisible(),
+        scene: sceneInfo()
       };
+
+      // 取消默认模板 → 纯 3:2 空白参考照片
+      card('param-panel').click();
+      await sleep(480);
+      const afterClear = {
+        template: WM.ui.settings.template,
+        active: activeCount(),
+        ratio: boxRatio(),
+        canvasFilled: filled(),
+        promptVisible: promptVisible()
+      };
+
+      // 底部白边：外框变高，但照片区仍是 3:2
       card('bottom-bar').click();
-      await sleep(400);
+      await sleep(520);
+      const bottomBar = {
+        template: WM.ui.settings.template,
+        active: activeCount(),
+        ratio: boxRatio(),
+        canvasFilled: filled(),
+        promptVisible: promptVisible(),
+        scene: sceneInfo()
+      };
+
+      card('bottom-bar').click();
+      await sleep(420);
       const afterToggle = {
         template: WM.ui.settings.template,
-        active: activeCount(),
-        promptShown: promptDisplay() !== 'none',
-        hasTemplateClass: box.classList.contains('has-template')
+        ratio: boxRatio(),
+        canvasFilled: filled(),
+        promptVisible: promptVisible()
       };
+
+      // 胶片：外框更高更窄，照片区仍 3:2
       card('film-frame').click();
-      await sleep(400);
+      await sleep(520);
+      const film = {
+        template: WM.ui.settings.template,
+        ratio: boxRatio(),
+        canvasFilled: filled(),
+        promptVisible: promptVisible(),
+        scene: sceneInfo()
+      };
+
       card('film-frame').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
-      await sleep(400);
+      await sleep(480);
       const afterDbl = {
         template: WM.ui.settings.template,
-        active: activeCount()
+        ratio: boxRatio(),
+        canvasFilled: filled(),
+        promptVisible: promptVisible()
       };
 
       return JSON.stringify({
-        ratio: Number((rect.width / rect.height).toFixed(3)),
         radius: cs.borderRadius,
         prompt: (document.querySelector('.empty-title') || {}).textContent || '',
-        canvasFilled,
         topbarOpen: !!document.getElementById('btn-open'),
         topbarDemo: !!document.getElementById('btn-demo'),
         previewHidden: document.getElementById('preview').hidden,
         emptyVisible: !box.hidden,
-        afterSelect,
+        initial,
+        afterClear,
+        bottomBar,
         afterToggle,
+        film,
         afterDbl,
         banner: (document.getElementById('wm-error-banner') || {}).textContent || ''
       });
@@ -1804,19 +1846,31 @@ async function main() {
     const result = JSON.parse(raw);
     console.log(JSON.stringify(result, null, 2));
     if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));
-    const healthy = Math.abs(result.ratio - 1.5) <= 0.02 &&
-      result.radius === '0px' &&
+    const close = (a, b, tol) => Math.abs(a - b) <= tol;
+    const healthy = result.radius === '0px' &&
       result.prompt.indexOf('拖入') >= 0 &&
-      result.canvasFilled &&
       result.topbarOpen === false && result.topbarDemo === false &&
       result.previewHidden && result.emptyVisible &&
-      result.afterSelect.template === 'bottom-bar' && result.afterSelect.active === 1 &&
-      result.afterSelect.canvasFilled && result.afterSelect.hasTemplateClass &&
-      result.afterSelect.promptVisible && result.afterSelect.ops > 0 &&
-      Math.abs(result.afterSelect.ratio - 1.5) <= 0.02 &&
-      result.afterToggle.template === '' && result.afterToggle.active === 0 &&
-      result.afterToggle.promptShown && result.afterToggle.hasTemplateClass === false &&
-      result.afterDbl.template === '' && result.afterDbl.active === 0 &&
+      result.initial.template === 'param-panel' && result.initial.active === 1 &&
+      close(result.initial.ratio, 1.5, 0.02) && result.initial.canvasFilled &&
+      result.initial.scene.photoRatio === 1.5 &&
+      result.afterClear.template === '' && result.afterClear.active === 0 &&
+      close(result.afterClear.ratio, 1.5, 0.02) &&
+      result.afterClear.canvasFilled === false && result.afterClear.promptVisible &&
+      result.bottomBar.template === 'bottom-bar' && result.bottomBar.active === 1 &&
+      close(result.bottomBar.scene.photoRatio, 1.5, 0.012) &&
+      close(result.bottomBar.ratio, result.bottomBar.scene.ratio, 0.01) &&
+      result.bottomBar.scene.ratio < 1.45 &&
+      result.bottomBar.canvasFilled && result.bottomBar.promptVisible &&
+      result.bottomBar.scene.ops > 0 &&
+      result.afterToggle.template === '' && close(result.afterToggle.ratio, 1.5, 0.02) &&
+      result.afterToggle.canvasFilled === false && result.afterToggle.promptVisible &&
+      result.film.template === 'film-frame' &&
+      close(result.film.scene.photoRatio, 1.5, 0.012) &&
+      close(result.film.ratio, result.film.scene.ratio, 0.01) &&
+      result.film.scene.ratio < 1.2 && result.film.canvasFilled && result.film.promptVisible &&
+      result.afterDbl.template === '' && close(result.afterDbl.ratio, 1.5, 0.02) &&
+      result.afterDbl.canvasFilled === false && result.afterDbl.promptVisible &&
       !result.banner;
     stopChrome();
     process.exit(healthy ? 0 : 1);
