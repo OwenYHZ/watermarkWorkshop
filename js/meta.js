@@ -594,7 +594,7 @@
    * ------------------------------------------------------------------ */
   var EDIT_STRING_FIELDS = {
     make: 1, model: 1, lens: 1, lensMake: 1, lensSerial: 1,
-    artist: 1, copyright: 1, software: 1, serial: 1, description: 1
+    artist: 1, copyright: 1, software: 1, serial: 1, description: 1, filename: 1
   };
 
   function parseEditedNumber(text) {
@@ -701,6 +701,7 @@
       case 'copyright': return summary.copyright || '';
       case 'software': return summary.software || '';
       case 'description': return summary.description || '';
+      case 'filename': return summary.filename || '';
       case 'aperture': return summary.apertureText || '';
       case 'shutter': return summary.shutterText || '';
       case 'iso': return summary.isoText || '';
@@ -756,6 +757,7 @@
       case 'copyright': summary.copyright = value; break;
       case 'software': summary.software = value; break;
       case 'description': summary.description = value; break;
+      case 'filename': summary.filename = value; break;
       case 'aperture': summary.aperture = value; summary.apertureText = parsed.display; break;
       case 'shutter': summary.shutter = value; summary.shutterText = parsed.display; break;
       case 'iso': summary.iso = value; summary.isoText = parsed.display; break;
@@ -1529,85 +1531,27 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * EXIF 可见性：默认只显示「常用 / 可能出现在水印上」的字段，
-   * 其余（被摄体距离、传感器方法、缩略图、ICC 白点…）归入「全部」。
-   * buildReport 的数据不裁剪，只做标记，保证 JSON 导出与既有测试不变。
+   * 水印字段清单：常用面板固定显示这 15 项（要且只要这些）。
+   * 与 layout.js 里真正参与渲染的 token 一一对应，不多不少。
+   * 与照片是否带 EXIF 无关：无 EXIF 时全为空值，仍可手动填入。
    * ------------------------------------------------------------------ */
-  var EXIF_CORE = {
-    camera: '*',
-    lens: '*',
-    warn: '*',
-    file: [
-      '文件名', '文件类型', '文件大小', '图像尺寸', '宽高比', '像素总量',
-      '方向', 'JPEG 编码', '采样精度', '渐进式', '量化表',
-      'PNG 位深', '颜色类型'
-    ],
-    time: [
-      'DateTimeOriginal', 'DateTimeDigitized', 'OffsetTimeOriginal'
-    ],
-    // 只留「会出现在水印上 / 摄影人真会看」的曝光项；
-    // ExposureProgram / MeteringMode / LightSource / Flash 等归入「显示全部」。
-    exposure: [
-      'ExposureTime', 'FNumber', 'ISOSpeedRatings', 'ExposureBiasValue',
-      'FocalLength', 'FocalLengthIn35mmFilm', 'ExposureMode', 'WhiteBalance'
-    ],
-    post: ['Software'],
-    other: ['DateTime'],
-    image: ['Orientation', 'ImageDescription'],
-    gps: ['十进制坐标', '度分秒', 'OpenStreetMap', '海拔'],
-    xmp: [
-      'xmp:Rating', 'photoshop:City', 'photoshop:Country', 'photoshop:Credit',
-      'dc:title', 'dc:creator', 'dc:subject', 'dc:rights', 'dc:description'
-    ],
-    iptc: [
-      '字符集', '标题 (ObjectName)', '标题 (Headline)', '说明 (Caption)', '关键词',
-      '作者 (By-line)', '版权', '城市', '地区', '国家', '拍摄日期', '来源', '署名'
-    ],
-    icc: ['配置描述', '设备类别', '色彩空间', '渲染意图'],
-    png: ['Software', 'Author', 'Description']
-  };
-
-  /**
-   * 判断一行在「只看常用」模式下是否显示。
-   * 未列出的分组与未列出的行默认隐藏（extra），可用「显示全部」找回。
-   */
-  function rowVisibility(groupId, row) {
-    var allow = EXIF_CORE[groupId];
-    if (allow === '*') return 'core';
-    if (!allow) return 'extra';
-    var name = String(row && row.name || '').trim();
-    if (!name) return 'extra';
-    if (allow.indexOf(name) >= 0) return 'core';
-    // dc:* 一类的通配支持
-    for (var i = 0; i < allow.length; i++) {
-      if (allow[i].indexOf('*') >= 0) {
-        var prefix = allow[i].replace(/\*+$/, '');
-        if (name.indexOf(prefix) === 0) return 'core';
-      }
-    }
-    return 'extra';
-  }
-
-  /**
-   * 分组在「只看常用」模式下的显示决策（纯函数，便于单测）：
-   *   - 核心字段为 0 的非警告组 → 整组不显示
-   *   - 有核心字段（或警告组）→ 默认展开，不需要用户再点一次
-   */
-  function groupVisibility(groupId, rows) {
-    var coreCount = 0;
-    var extraCount = 0;
-    (rows || []).forEach(function (row) {
-      if (rowVisibility(groupId, row) === 'core') coreCount += 1;
-      else extraCount += 1;
-    });
-    var isWarn = groupId === 'warn';
-    return {
-      coreCount: coreCount,
-      extraCount: extraCount,
-      hiddenWhenScoped: !isWarn && coreCount === 0,
-      openWhenScoped: isWarn || coreCount > 0
-    };
-  }
+  var WATERMARK_FIELDS = [
+    { field: 'make',      label: '品牌',     cn: 'Make' },
+    { field: 'model',     label: '型号',     cn: 'Model' },
+    { field: 'lens',      label: '镜头',     cn: 'LensModel' },
+    { field: 'focal',     label: '焦距',     cn: 'FocalLength' },
+    { field: 'aperture',  label: '光圈',     cn: 'FNumber' },
+    { field: 'shutter',   label: '快门',     cn: 'ExposureTime' },
+    { field: 'iso',       label: 'ISO',      cn: 'ISOSpeedRatings' },
+    { field: 'datetime',  label: '拍摄时间', cn: 'DateTimeOriginal' },
+    { field: 'offset',    label: '时区',     cn: 'OffsetTimeOriginal' },
+    { field: 'lat',       label: '纬度',     cn: 'GPSLatitude' },
+    { field: 'lon',       label: '经度',     cn: 'GPSLongitude' },
+    { field: 'alt',       label: '海拔',     cn: 'GPSAltitude' },
+    { field: 'artist',    label: '作者',     cn: 'Artist' },
+    { field: 'copyright', label: '版权',     cn: 'Copyright' },
+    { field: 'filename',  label: '文件名',   cn: 'FileName' }
+  ];
 
   function reportToJson(parsed, report) {
     return {
@@ -1883,8 +1827,7 @@
   return {
     buildReport: buildReport,
     reportToJson: reportToJson,
-    rowVisibility: rowVisibility,
-    groupVisibility: groupVisibility,
+    WATERMARK_FIELDS: WATERMARK_FIELDS,
     parseXmp: parseXmp,
     parseIptc: parseIptc,
     parseIcc: parseIcc,

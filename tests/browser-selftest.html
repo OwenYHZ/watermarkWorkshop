@@ -434,33 +434,33 @@
       eq(isoSummary.apertureText, 'f/7.1', 'XMP 光圈进入摘要');
       eq(isoSummary.model, 'EOS 200D II', 'XMP 型号进入摘要');
 
-      // EXIF 可见性：默认精简，常用字段保留、无用字段归入「显示全部」
-      eq(typeof WM.meta.rowVisibility, 'function', 'rowVisibility 已导出');
-      var canonReport2 = WM.meta.buildReport(canon);
-      var visTotal = 0;
-      var visCore = 0;
-      var visExtra = [];
-      canonReport2.groups.forEach(function (g) {
-        g.rows.forEach(function (r) {
-          visTotal += 1;
-          if (WM.meta.rowVisibility(g.id, r) === 'core') visCore += 1;
-          else visExtra.push(r.name);
-        });
+      // 水印字段清单：固定 15 项，均可读取与写入
+      eq(typeof WM.meta.WATERMARK_FIELDS, 'object', 'WATERMARK_FIELDS 已导出');
+      eq(WM.meta.WATERMARK_FIELDS.length, 15, '正好 15 项水印字段');
+      var wmFields = WM.meta.WATERMARK_FIELDS.map(function (f) { return f.field; });
+      eq(new Set(wmFields).size, 15, '字段名不重复');
+      var emptySummary = WM.meta.buildSummary({
+        format: 'jpeg', dimensions: { width: 100, height: 80 },
+        file: { name: 'x.jpg', size: 1 }, exif: null, warnings: []
       });
-      log(visCore > 0 && visCore <= visTotal * 0.55, 'EXIF 默认只显示常用字段（' + visCore + '/' + visTotal + '）');
-      log(visExtra.indexOf('SubjectDistance') >= 0 && visExtra.indexOf('ImageUniqueID') >= 0 &&
-        visExtra.indexOf('内嵌缩略图') >= 0, '被摄体距离 / ImageUniqueID / 缩略图默认隐藏');
-      eq(WM.meta.rowVisibility('file', { name: '采样精度' }), 'core', '采样精度保留');
-      eq(WM.meta.rowVisibility('exposure', { name: 'SubjectDistanceRange' }), 'extra', '被摄体距离范围默认隐藏');
-      eq(WM.meta.rowVisibility('camera', { name: '任何字段' }), 'core', '相机组整组保留');
-
-      // 分组折叠决策：0 个常用字段整组隐藏；有常用字段默认展开
-      var emptyGroup = WM.meta.groupVisibility('image', [{ name: 'XResolution' }, { name: 'YResolution' }]);
-      eq(emptyGroup.hiddenWhenScoped, true, '0/n 组整组隐藏');
-      eq(emptyGroup.openWhenScoped, false, '0/n 组不需要展开');
-      var oneCoreGroup = WM.meta.groupVisibility('image', [{ name: 'ImageDescription' }, { name: 'XResolution' }]);
-      eq(oneCoreGroup.openWhenScoped, true, '1/n 组默认展开');
-      eq(WM.meta.groupVisibility('warn', [{ name: 'w' }]).hiddenWhenScoped, false, '警告组永不隐藏');
+      var allReadable = WM.meta.WATERMARK_FIELDS.every(function (f) {
+        return typeof WM.meta.formatFieldDisplay(f.field, emptySummary) === 'string';
+      });
+      log(allReadable, '无 EXIF 时每个字段都能读取显示值');
+      var samples = {
+        make: 'Leica', model: 'M11', lens: 'Summicron 35', focal: '35mm',
+        aperture: 'f/2', shutter: '1/250s', iso: 'ISO 400',
+        datetime: '2024-05-01 12:34:56', offset: '+08:00',
+        lat: '30.2701', lon: '120.1551', alt: '40 米',
+        artist: 'A', copyright: 'C', filename: 'r.jpg'
+      };
+      var allWritable = WM.meta.WATERMARK_FIELDS.every(function (f) {
+        return WM.meta.applyFieldEdit(emptySummary, f.field, samples[f.field]).ok === true;
+      });
+      log(allWritable, '无 EXIF 时每个字段都可写入');
+      eq(emptySummary.filename, 'r.jpg', 'filename 可被修改');
+      eq(WM.meta.rowVisibility, undefined, 'rowVisibility 已移除');
+      eq(WM.meta.groupVisibility, undefined, 'groupVisibility 已移除');
 
       summaryLine();
     }

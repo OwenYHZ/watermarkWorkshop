@@ -34,15 +34,13 @@
     0 18px 48px hsl(var(--photo-h) var(--photo-s) 42% / 0.10),
     0 0 64px hsl(var(--photo-h) var(--photo-s) 52% / 0.10);
   --dock-base: 96px;
-  --dock-ease: cubic-bezier(.22, .9, .24, 1);
   --glass-border: rgba(255, 255, 255, 0.72);
   --scroll-thumb: rgba(55, 75, 80, 0.25);
   --range-accent: #20272a;
   --overlay: rgba(35, 48, 52, 0.28);
   --backdrop-tint: rgba(245, 248, 248, 0.18);
-  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath d='M1 1.5 7 7.5 13 1.5' fill='none' stroke='%235d6b70' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --select-arrow-active: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath d='M1 1.5 7 7.5 13 1.5' fill='none' stroke='%232c3a40' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --field-highlight: rgba(255, 255, 255, 0.55);
+  --field-sheen: rgba(255, 255, 255, 0.72);
   --radius: 20px;
   --font-scale: 1.25;
   --panel-left-width: 336px;
@@ -88,9 +86,8 @@
   --range-accent: #e9efee;
   --overlay: rgba(4, 7, 9, 0.58);
   --backdrop-tint: rgba(12, 18, 20, 0.38);
-  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath d='M1 1.5 7 7.5 13 1.5' fill='none' stroke='%23b7c2c3' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  --select-arrow-active: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath d='M1 1.5 7 7.5 13 1.5' fill='none' stroke='%23f0f5f4' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --field-highlight: rgba(255, 255, 255, 0.07);
+  --field-sheen: rgba(255, 255, 255, 0.06);
 }
 
 html { color-scheme: light; }
@@ -279,19 +276,39 @@ button { cursor: pointer; }
   box-shadow: inset 0 1px 0 var(--field-highlight), 0 0 0 3px var(--accent-soft);
 }
 /* 下拉选择栏：自定义大号箭头 + 右侧留白，浅深主题一致 */
+/* 下拉选择栏：外壳负责自绘细箭头，原生箭头彻底隐藏 */
+.select-shell { position: relative; display: block; min-width: 0; }
+.select-shell::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -5px;
+  border-right: 1.8px solid var(--muted);
+  border-bottom: 1.8px solid var(--muted);
+  transform: rotate(45deg);
+  transition: border-color .14s ease, transform .14s ease, margin-top .14s ease;
+  pointer-events: none;
+}
+.select-shell:hover::after { border-color: var(--accent); margin-top: -2px; }
+.select-shell:focus-within::after { border-color: var(--accent); }
 .select {
   appearance: none;
   -webkit-appearance: none;
-  padding-right: calc(36px * var(--font-scale));
-  background-image: var(--select-arrow);
-  background-repeat: no-repeat;
-  background-position: right calc(12px * var(--font-scale)) center;
-  background-size: calc(14px * var(--font-scale)) calc(9px * var(--font-scale));
+  padding-right: calc(38px * var(--font-scale));
+  background-image: none;
   cursor: pointer;
   font-weight: 500;
+  /* 质感：细渐变 + 内高光，避免死白平面 */
+  background-image: linear-gradient(180deg, var(--field-sheen) 0%, transparent 62%);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  border-color: var(--line);
 }
+.select:hover { border-color: var(--accent); }
 .select::-ms-expand { display: none; }
-.select:hover { background-image: var(--select-arrow-active); }
 .select option {
   background: var(--popover-bg);
   color: var(--text);
@@ -444,8 +461,7 @@ body.resizing * { cursor: col-resize !important; }
   gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  /* 上方预留放大空间（96px * 0.34 ≈ 33px），保证放大后不被裁切 */
-  padding: calc(var(--dock-base) * 0.34) 2px 0;
+  padding: 2px 2px 0;
 }
 .gallery-row .file-card {
   position: relative;
@@ -461,11 +477,7 @@ body.resizing * { cursor: col-resize !important; }
   cursor: pointer;
   display: flex;
   align-items: flex-end;
-  /* Dock 放大：transform 不触发重排，缩放原点固定在底边中点 */
-  transform-origin: bottom center;
-  transform: scale(var(--dock-scale, 1));
-  transition: transform .22s var(--dock-ease), box-shadow .18s ease, border-color .18s ease;
-  will-change: transform;
+  transition: box-shadow .18s ease, border-color .18s ease;
 }
 .gallery-row .file-card:hover { border-color: var(--accent); }
 .gallery-row .file-card.active {
@@ -697,11 +709,33 @@ body.resizing * { cursor: col-resize !important; }
 }
 .exif-row:hover { background: var(--accent-soft); }
 .exif-name { color: var(--muted); word-break: break-word; }
-.exif-name small { display: block; color: var(--faint); font-size: calc(10px * var(--font-scale)); margin-top: 1px; }
+.exif-name small {
+  display: block;
+  color: var(--faint);
+  font-size: calc(10px * var(--font-scale));
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .exif-value { position: relative; word-break: break-word; font-family: var(--mono); font-size: calc(11px * var(--font-scale)); }
 .exif-value a { font-family: var(--sans); }
 .exif-value.editable { cursor: text; border-radius: 4px; padding: 1px 3px; margin: -1px -3px; }
 .exif-value.editable:hover { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent-soft-strong); }
+/* 常用模式：空值提示（仍可双击填入） */
+.exif-value.is-empty { color: var(--faint); }
+.exif-value.is-empty.editable:hover { color: var(--muted); }
+.exif-empty {
+  display: inline-block;
+  padding: 0 7px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  font-size: calc(10px * var(--font-scale));
+  line-height: 1.6;
+  font-family: var(--sans);
+}
+.exif-group.watermark-fields > summary { color: var(--text); }
+.exif-group.watermark-fields .exif-name small { font-family: var(--mono); }
 .exif-row.edited { background: var(--warn-soft); }
 .exif-edited-dot {
   display: inline-block;
@@ -832,25 +866,42 @@ body.resizing * { cursor: col-resize !important; }
 .empty-note { color: var(--faint); font-size: calc(11px * var(--font-scale)); margin-top: 4px; }
 
 /* 右侧 --------------------------------------------------------------- */
-.controls { flex: 1 1 auto; overflow: auto; padding: 4px 0 10px; }
-.ctrl-section { border-bottom: 1px solid var(--line-soft); }
+/* 与左栏完全一致的视觉：大卡片里套可下拉的小卡片 */
+.controls { flex: 1 1 auto; overflow: auto; padding: 10px 12px 18px; }
+.ctrl-section {
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  margin-bottom: 9px;
+  background: var(--card-bg);
+  overflow: hidden;
+}
+.ctrl-section:last-child { margin-bottom: 0; }
 .ctrl-section > summary {
   list-style: none;
   cursor: pointer;
-  padding: 13px 16px;
+  padding: 9px 11px;
   font-size: calc(12px * var(--font-scale));
-  font-weight: 650;
-  letter-spacing: .02em;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   user-select: none;
 }
+.ctrl-section > summary:hover { background: var(--accent-soft); }
 .ctrl-section > summary::-webkit-details-marker { display: none; }
 .ctrl-section > summary::before { content: "▸"; color: var(--faint); font-size: calc(10px * var(--font-scale)); transition: transform .12s; }
 .ctrl-section[open] > summary::before { transform: rotate(90deg); }
-.ctrl-section > summary .sec-note { margin-left: auto; color: var(--faint); font-size: calc(10px * var(--font-scale)); font-weight: 400; }
-.ctrl-body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 12px; }
+.ctrl-section > summary .sec-note {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: calc(10px * var(--font-scale));
+  font-weight: 500;
+  background: var(--field-bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.ctrl-body { padding: 0 11px 12px; display: flex; flex-direction: column; gap: 11px; }
 .ctrl-row { display: flex; flex-direction: column; gap: 5px; }
 .ctrl-row.inline { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
 .ctrl-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: calc(11.5px * var(--font-scale)); color: var(--muted); }

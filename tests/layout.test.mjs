@@ -619,71 +619,51 @@ test('旧设置迁移：日期时间字段、DV 键、胶片边框与反转片',
   assert.equal('datetime' in migrated.fields, false);
 });
 
-test('EXIF 可见性：默认只显示常用字段，其余归入「显示全部」', async () => {
-  const fs = await import('node:fs');
-  const exifLib = require('../js/exif.js');
-  const bytes = new Uint8Array(fs.readFileSync('fixtures/canon-r5.jpg'));
-  const parsed = await exifLib.parse(bytes, { name: 'canon-r5.jpg', type: 'image/jpeg' });
-  const report = meta.buildReport(parsed);
+test('水印字段清单：固定 15 项，与渲染对应，且均可编辑', async () => {
+  const fields = meta.WATERMARK_FIELDS;
+  assert.ok(Array.isArray(fields), 'WATERMARK_FIELDS 已导出');
+  assert.equal(fields.length, 15, '正好 15 项');
 
-  let total = 0;
-  let core = 0;
-  const extraNames = [];
-  report.groups.forEach((group) => {
-    group.rows.forEach((row) => {
-      total += 1;
-      if (meta.rowVisibility(group.id, row) === 'core') core += 1;
-      else extraNames.push(row.name);
-    });
-  });
-  assert.ok(total >= 100, '测试样本字段充足（实际 ' + total + '）');
-  assert.ok(core <= total * 0.55, '常用字段不超过一半（' + core + '/' + total + '）');
+  // 字段名不重复
+  const names = fields.map((f) => f.field);
+  assert.equal(new Set(names).size, names.length, '字段名不重复');
 
-  // 用户不想看/不可能上水印的字段默认隐藏
-  ['SubjectDistance', 'SubjectArea', 'BrightnessValue',
-    'SensingMethod', 'FileSource', 'SceneType', 'DigitalZoomRatio',
-    'ImageUniqueID', 'MakerNote', '内嵌缩略图'].forEach((name) => {
-    assert.ok(extraNames.indexOf(name) >= 0, name + ' 应默认隐藏');
+  // 每项都有中文标签与原始 tag 名
+  fields.forEach((f) => {
+    assert.ok(f.label && f.label.length, f.field + ' 有中文标签');
+    assert.ok(f.cn && f.cn.length, f.field + ' 有原始 tag 名');
   });
-  // 即使样本里没有，规则本身也必须把它们判为 extra
-  ['SubjectDistanceRange', 'SubjectLocation', 'CompositeImage'].forEach((name) => {
-    assert.equal(meta.rowVisibility('exposure', { name: name }), 'extra', name + ' 应默认隐藏');
-  });
-  // 「用不上但用户会看」的字段保留
-  const coreNames = [];
-  report.groups.forEach((group) => {
-    group.rows.forEach((row) => {
-      if (meta.rowVisibility(group.id, row) === 'core') coreNames.push(row.name);
-    });
-  });
-  ['采样精度', '量化表', '文件大小', '图像尺寸', 'ISOSpeedRatings', 'ExposureTime'].forEach((name) => {
-    assert.ok(coreNames.indexOf(name) >= 0, name + ' 应默认显示');
-  });
-  // 相机与镜头整组保留；警告永远保留
-  assert.equal(meta.rowVisibility('camera', { name: '任何字段' }), 'core');
-  assert.equal(meta.rowVisibility('warn', { name: '任何警告' }), 'core');
-  // 未知分组/未知字段默认隐藏
-  assert.equal(meta.rowVisibility('mystery', { name: 'x' }), 'extra');
-  assert.equal(meta.rowVisibility('file', { name: '未列出的新字段' }), 'extra');
 
-  // 分组折叠决策：0 个常用字段的非警告组整组不显示；有常用字段则默认展开
-  const emptyGroup = meta.groupVisibility('image', [
-    { name: 'XResolution' }, { name: 'YResolution' }
-  ]);
-  assert.equal(emptyGroup.coreCount, 0);
-  assert.equal(emptyGroup.hiddenWhenScoped, true, '0/n 组整组隐藏');
-  assert.equal(emptyGroup.openWhenScoped, false);
+  // 均能读取显示值
+  const summary = meta.buildSummary({ format: 'jpeg', dimensions: { width: 100, height: 80 }, file: { name: 'x.jpg', size: 1 }, exif: null, warnings: [] });
+  fields.forEach((f) => {
+    const display = meta.formatFieldDisplay(f.field, summary);
+    assert.equal(typeof display, 'string', f.field + ' 可读取显示值');
+  });
 
-  const oneCoreGroup = meta.groupVisibility('image', [
-    { name: 'ImageDescription' }, { name: 'XResolution' }
-  ]);
-  assert.equal(oneCoreGroup.coreCount, 1);
-  assert.equal(oneCoreGroup.hiddenWhenScoped, false);
-  assert.equal(oneCoreGroup.openWhenScoped, true, '1/n 组默认展开');
+  // 均能写入（包括无 EXIF 的图片）
+  const samples = {
+    make: 'Leica', model: 'M11', lens: 'Summicron 35', focal: '35mm',
+    aperture: 'f/2', shutter: '1/250s', iso: 'ISO 400',
+    datetime: '2024-05-01 12:34:56', offset: '+08:00',
+    lat: '30.2701', lon: '120.1551', alt: '40 米',
+    artist: '作者', copyright: '© 2024', filename: 'renamed.jpg'
+  };
+  let changed = 0;
+  fields.forEach((f) => {
+    const res = meta.applyFieldEdit(summary, f.field, samples[f.field]);
+    assert.equal(res.ok, true, f.field + ' 可写入：' + (res.error || ''));
+    changed += 1;
+  });
+  assert.equal(changed, 15, '全部字段可写');
 
-  const warnGroup = meta.groupVisibility('warn', [{ name: '任何警告' }]);
-  assert.equal(warnGroup.hiddenWhenScoped, false, '警告组永不隐藏');
-  assert.equal(warnGroup.openWhenScoped, true);
+  // filename 真的写进了 summary（不动真实文件名）
+  assert.equal(summary.filename, 'renamed.jpg');
+  assert.equal(meta.formatFieldDisplay('filename', summary), 'renamed.jpg');
+  // 写入后能读回来（光圈/快门/ISO 带格式化）
+  assert.equal(meta.formatFieldDisplay('make', summary), 'Leica');
+  assert.equal(meta.formatFieldDisplay('aperture', summary), 'f/2');
+  assert.equal(meta.formatFieldDisplay('iso', summary), 'ISO 400');
 });
 
 test('品牌自动识别', () => {

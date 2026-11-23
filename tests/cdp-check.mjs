@@ -774,22 +774,17 @@ async function main() {
       return shadow !== 'none' && shadow.split('rgb').length >= 3;
     };
     // Dock 放大：选中项最大，距离越远越小，距离 >=3 恒为 1，且所有卡片底边对齐。
-    const dockZoomHealthy = (snapshot) => {
+    // 底栏：所有缩略图等大、底边对齐（Dock 放大已移除）
+    const dockUniform = (snapshot) => {
       const d = snapshot.dock;
-      if (!d || !d.scales.length || d.scales.length < 3) return false;
-      const idx = d.activeIndex;
-      if (idx < 0) return false;
-      const peak = d.scales[idx];
-      if (!(peak > 1.05)) return false;
-      const bottoms = d.cardBottoms;
-      if (!bottoms.every((b) => Math.abs(b - bottoms[0]) <= 1)) return false;
-      for (let i = 0; i < d.scales.length; i++) {
-        const dist = Math.abs(i - idx);
-        if (dist === 0 && Math.abs(d.scales[i] - peak) > 0.001) return false;
-        if (dist >= 1 && dist <= 2 && !(d.scales[i] < peak && d.scales[i] > 1)) return false;
-        if (dist >= 3 && Math.abs(d.scales[i] - 1) > 0.001) return false;
-      }
-      return true;
+      if (!d || d.cardHeights.length < 2) return false;
+      const hs = d.cardHeights;
+      const bs = d.cardBottoms;
+      const sameH = hs.every((h) => Math.abs(h - hs[0]) <= 1);
+      const sameB = bs.every((b) => Math.abs(b - bs[0]) <= 1);
+      const inRange = hs[0] >= 90 && hs[0] <= 130;
+      const noScale = d.scales.every((v) => Math.abs(v - 1) <= 0.001);
+      return sameH && sameB && inRange && noScale;
     };
     const dockGrows = (before, after) =>
       before.dock.galleryWidth - after.dock.galleryWidth >= 78 &&
@@ -803,7 +798,7 @@ async function main() {
       dockAligned(result.initial) && dockAligned(result.afterLeft) && dockAligned(result.afterRight) &&
       panelsHealthy(result.initial) && panelsHealthy(result.afterLeft) && panelsHealthy(result.afterRight) &&
       previewClean(result.initial) && glowHealthy(result.initial) &&
-      dockZoomHealthy(result.initial) &&
+      dockUniform(result.initial) && dockUniform(result.afterLeft) &&
       dockGrows(result.initial, result.afterLeft) &&
       grew(result.initial.widths.left, result.afterLeft.widths.left, 80) &&
       result.afterLeft.center >= 360 &&
@@ -1176,25 +1171,56 @@ async function main() {
       await sleep(200);
       result.presetBar.popoverClosed = popover ? popover.hidden : true;
 
+      // 底部栏：图片过多时滚轮可左右滑动
+      await (async () => {
+        const load = async (name, type) => {
+          const res = await fetch('fixtures/' + name);
+          const blob = await res.blob();
+          return new File([blob], name, { type });
+        };
+        const more = [];
+        for (let k = 0; k < 16; k++) more.push(await load('canon-r5.jpg', 'image/jpeg'));
+        await WM.ui.addFiles(more);
+        await sleep(1200);
+        const row = document.getElementById('bottom-gallery');
+        const before = row.scrollLeft;
+        const overflow = row.scrollWidth > row.clientWidth + 1;
+        row.dispatchEvent(new WheelEvent('wheel', { deltaY: 240, bubbles: true, cancelable: true }));
+        await sleep(160);
+        result.galleryWheel = {
+          overflow,
+          cards: row.querySelectorAll('.file-card').length,
+          before,
+          after: row.scrollLeft,
+          scrollWidth: row.scrollWidth,
+          clientWidth: row.clientWidth
+        };
+      })();
+
       // EXIF 精简：默认隐藏字段数 > 0，按钮可切到「显示全部」。
       const scopeBtn = document.getElementById('btn-exif-all');
-      const hiddenByDefault = document.querySelectorAll('#exif-body .exif-row[data-vis="extra"]:not([hidden])').length;
-      const extraRows = document.querySelectorAll('#exif-body .exif-row[data-vis="extra"]').length;
-      const beforeRows = document.querySelectorAll('#exif-body .exif-row:not([hidden])').length;
+      // 常用模式：只有一张「水印字段」卡，固定 15 行且全部可编辑
+      const scopedGroups = document.querySelectorAll('#exif-body .exif-group');
+      const scopedRows = document.querySelectorAll('#exif-body .exif-row');
+      const scopedEditable = document.querySelectorAll('#exif-body .exif-value.editable');
+      const beforeRows = scopedRows.length;
+      const scopedTitle = scopedGroups[0]
+        ? (scopedGroups[0].querySelector('summary span') || {}).textContent || '' : '';
       scopeBtn.click();
-      await sleep(300);
-      const afterRows = document.querySelectorAll('#exif-body .exif-row:not([hidden])').length;
-      // 折叠规则：0/n 的组在只看常用时整组不渲染；1/n 以上的组默认展开。
-      const scopedGroups = Array.from(document.querySelectorAll('#exif-body .exif-group[data-group]'));
-      const closedWithRows = scopedGroups.filter((g) => !g.open &&
-        g.querySelectorAll('.exif-row:not([hidden])').length > 0).length;
+      await sleep(320);
+      const afterRows = document.querySelectorAll('#exif-body .exif-row').length;
+      const rawEditable = document.querySelectorAll('#exif-body .exif-value.editable').length;
+      const rawGroups = document.querySelectorAll('#exif-body .exif-group').length;
       result.exifScope = {
-        extraRows,
-        hiddenByDefault,
+        scopedGroupCount: scopedGroups.length,
+        scopedRows: scopedRows.length,
+        scopedEditable: scopedEditable.length,
+        scopedTitle,
+        expectedFields: (WM.meta.WATERMARK_FIELDS || []).length,
+        rawEditable,
+        rawGroups,
         beforeRows,
         afterRows,
-        groupCount: scopedGroups.length,
-        closedWithRows,
         labelAfter: scopeBtn.textContent,
         pressed: scopeBtn.getAttribute('aria-pressed')
       };
@@ -1202,14 +1228,17 @@ async function main() {
       // 下拉选择栏：自定义箭头 + 统一圆角（美化是否生效）
       const selectEl = document.querySelector('#controls select.select');
       const selStyle = selectEl ? getComputedStyle(selectEl) : null;
+      const shellAfter = selectEl && selectEl.closest('.select-shell')
+        ? getComputedStyle(selectEl.closest('.select-shell'), '::after') : null;
       result.selectSkin = selStyle ? {
-        arrow: selStyle.backgroundImage,
+        noNativeArrow: (selStyle.backgroundImage || '').indexOf('url(') < 0,
         radius: parseFloat(selStyle.borderRadius),
-        minHeight: parseFloat(selStyle.minHeight)
+        minHeight: parseFloat(selStyle.minHeight),
+        shellArrow: shellAfter ? parseFloat(shellAfter.borderRightWidth) : 0
       } : null;
       scopeBtn.click();
       await sleep(250);
-      result.exifScope.restoredRows = document.querySelectorAll('#exif-body .exif-row:not([hidden])').length;
+      result.exifScope.restoredRows = document.querySelectorAll('#exif-body .exif-row').length;
 
       result.banner = (document.getElementById('wm-error-banner') || {}).textContent || '';
       return JSON.stringify(result);
@@ -1219,12 +1248,14 @@ async function main() {
     console.log(JSON.stringify(result, null, 2));
     if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));
     const style = result.selectStyle || {};
+    // 下拉现在由 .select-shell 自绘箭头：select 本身无贴图箭头，箭头在外壳伪元素上。
+    const styleHealthy = style.appearance === 'none' &&
+      !/url\(/i.test(style.backgroundImage || '') &&
+      parseFloat(style.paddingRight) >= 34;
     const filmTexts = result.film ? result.film.texts : [];
     const stock = filmTexts.find((t) => t.text === 'PORTRA 400');
     const printItem = filmTexts.find((t) => t.text === 'P');
-    const healthy = style.appearance === 'none' &&
-      /svg/i.test(style.backgroundImage || '') &&
-      parseFloat(style.backgroundSize) >= 14 &&
+    const healthy = styleHealthy &&
       result.dateToggle && result.dateOff && result.dateOff.value === false && result.dateOff.changed &&
       result.dateStyle && result.dateStyleValue === 'cn' && result.dateStyleText &&
       result.brand && result.brand.hasLogo && !result.brand.duplicate &&
@@ -1265,13 +1296,20 @@ async function main() {
       result.presetBar.popoverOpened && result.presetBar.ariaExpanded === 'true' &&
       result.presetBar.lastChildIsImport && result.presetBar.lastChildText === '导入预设' &&
       result.presetBar.popoverClosed &&
-      result.exifScope && result.exifScope.extraRows > 0 && result.exifScope.hiddenByDefault === 0 &&
+      result.exifScope && result.exifScope.scopedGroupCount === 1 &&
+      result.exifScope.scopedTitle.indexOf('水印字段') >= 0 &&
+      result.exifScope.scopedRows === result.exifScope.expectedFields &&
+      result.exifScope.scopedEditable === result.exifScope.expectedFields &&
+      result.exifScope.rawGroups > 1 && result.exifScope.rawEditable === 0 &&
       result.exifScope.afterRows > result.exifScope.beforeRows &&
       result.exifScope.labelAfter === '只看常用' && result.exifScope.pressed === 'true' &&
       result.exifScope.restoredRows === result.exifScope.beforeRows &&
-      result.exifScope.groupCount > 0 && result.exifScope.closedWithRows === 0 &&
-      result.selectSkin && /svg/.test(result.selectSkin.arrow) &&
+      result.galleryWheel && result.galleryWheel.overflow &&
+      result.galleryWheel.cards >= 8 &&
+      result.galleryWheel.after > result.galleryWheel.before &&
+      result.selectSkin && result.selectSkin.noNativeArrow &&
       result.selectSkin.radius >= 10 && result.selectSkin.minHeight >= 30 &&
+      result.selectSkin.shellArrow > 0 &&
       !result.banner;
     stopChrome();
     process.exit(healthy ? 0 : 1);
@@ -1299,7 +1337,27 @@ async function main() {
         })(),
         bodyBg: getComputedStyle(document.body).backgroundColor,
         panelBg: getComputedStyle(document.querySelector('.panel')).backgroundColor,
-        topbarBg: getComputedStyle(document.querySelector('.topbar')).backgroundColor
+        topbarBg: getComputedStyle(document.querySelector('.topbar')).backgroundColor,
+        // 右栏分区必须与左栏分组完全同构（同样式大卡片）
+        rightCard: (() => {
+          const sec = document.querySelector('#controls .ctrl-section');
+          const grp = document.querySelector('#exif-body .exif-group');
+          if (!sec || !grp) return null;
+          const a = getComputedStyle(sec), b = getComputedStyle(grp);
+          return {
+            radius: a.borderRadius === b.borderRadius,
+            borderStyle: a.borderTopStyle === b.borderTopStyle && a.borderTopWidth === b.borderTopWidth,
+            bg: a.backgroundColor === b.backgroundColor
+          };
+        })(),
+        exifFixed: (() => {
+          const rows = document.querySelectorAll('#exif-body .exif-row');
+          return {
+            groups: document.querySelectorAll('#exif-body .exif-group').length,
+            rows: rows.length,
+            editable: document.querySelectorAll('#exif-body .exif-value.editable').length
+          };
+        })()
       });
     })()`);
     const result = JSON.parse(initialRaw);
@@ -1371,6 +1429,9 @@ async function main() {
       result.reloaded.active === 'light' &&
       result.light.panelBg !== result.dark.panelBg &&
       result.light.topbarBg !== result.dark.topbarBg &&
+      result.rightCard && result.rightCard.radius && result.rightCard.borderStyle &&
+      result.exifFixed && result.exifFixed.groups === 1 &&
+      result.exifFixed.rows === 15 && result.exifFixed.editable === 15 &&
       !result.banner;
     stopChrome();
     process.exit(healthy ? 0 : 1);
@@ -1487,29 +1548,52 @@ async function main() {
     await evaluate(`document.getElementById('btn-preset-use').click()`);
     await sleep(200);
 
-    // Dock 放大：加载多张图，选中第 2 张以体现距离 0/1/2/≥3 的放大梯度
+    // 底栏滚轮横滑：加载多张图，让列表溢出，并向右滚动
     await evaluate(`(async () => {
       const load = async (name, type) => {
         const res = await fetch('fixtures/' + name);
         const blob = await res.blob();
         return new File([blob], name, { type });
       };
-      await WM.ui.addFiles([
-        await load('nikon-z6.png', 'image/png'),
-        await load('canon-r5.jpg', 'image/jpeg'),
-        await load('nikon-z6.png', 'image/png'),
-        await load('canon-r5.jpg', 'image/jpeg')
-      ]);
+      const more = [];
+      for (let k = 0; k < 10; k++) more.push(await load('nikon-z6.png', 'image/png'));
+      await WM.ui.addFiles(more);
+      return true;
+    })()`);
+    await sleep(1800);
+    await evaluate(`(() => {
+      const row = document.getElementById('bottom-gallery');
+      row.scrollLeft = 160;
+      return true;
+    })()`);
+    await sleep(400);
+    await captureState('dock-scroll');
+
+    // 无 EXIF 的图片：常用栏仍然固定 15 行且可填写
+    await evaluate(`(async () => {
+      const res = await fetch('fixtures/no-exif.jpg');
+      const blob = await res.blob();
+      await WM.ui.addFiles([new File([blob], 'no-exif.jpg', { type: 'image/jpeg' })]);
       return true;
     })()`);
     await sleep(1600);
-    await evaluate(`(() => {
-      const cards = document.querySelectorAll('#bottom-gallery .file-card');
-      if (cards.length > 2) cards[2].click();
+    await evaluate(`(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const row = Array.from(document.querySelectorAll('#exif-body .exif-row')).find((r) => r.dataset.field === 'make');
+      if (!row) return false;
+      const val = row.querySelector('.exif-value');
+      val.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      await sleep(150);
+      const input = val.querySelector('input');
+      if (input) {
+        input.value = 'LEICA';
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      }
+      await sleep(600);
       return true;
     })()`);
-    await sleep(700);
-    await captureState('dock-zoom');
+    await sleep(600);
+    await captureState('no-exif-filled');
 
     console.log(JSON.stringify({ state, files }, null, 2));
     if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));

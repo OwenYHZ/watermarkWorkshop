@@ -246,9 +246,6 @@
     $id('progress-fill').style.width = '0%';
   }
 
-  /* ------------------------------------------------------------------ *
-   * 图片载入
-   * ------------------------------------------------------------------ */
   function decodeBitmap(blob) {
     if (typeof createImageBitmap === 'function') {
       return createImageBitmap(blob, { imageOrientation: 'none' }).catch(function () {
@@ -398,8 +395,7 @@
   function selectFile(id) {
     app.activeId = id;
     renderActivePhoto();
-    // 不重建列表 DOM，只更新选中态与 --dock-scale，让 Dock 放大动画能平滑过渡。
-    applyDockScale();
+    renderFileList();
     renderExif({ resetView: true });
     updateExifActions();
     updateExportButtons();
@@ -418,30 +414,6 @@
     document.body.classList.add('has-photo');
   }
 
-  /* ------------------------------------------------------------------ *
-   * 底部图片列表：Dock 式放大
-   * 以当前选中照片为峰值，距离 0/1/2 依次衰减，距离 ≥3 不放大；
-   * 只改 CSS 变量 --dock-scale，由 transition 产生平滑动画。
-   * ------------------------------------------------------------------ */
-  var DOCK_PEAK = 0.30;         // 选中项最多放大 30%
-  var DOCK_CURVE = [1, 0.72, 0.38];  // 距离 0 / 1 / 2 的强度系数
-
-  function applyDockScale() {
-    var host = $id('bottom-gallery');
-    if (!host) return;
-    var cards = Array.prototype.slice.call(host.querySelectorAll('.file-card'));
-    var activeIdx = -1;
-    for (var i = 0; i < app.files.length; i++) {
-      if (app.files[i].id === app.activeId) { activeIdx = i; break; }
-    }
-    cards.forEach(function (card, idx) {
-      var dist = activeIdx < 0 ? 99 : Math.abs(idx - activeIdx);
-      var strength = dist < DOCK_CURVE.length ? DOCK_CURVE[dist] : 0;
-      var scale = 1 + DOCK_PEAK * strength;
-      card.style.setProperty('--dock-scale', scale.toFixed(3));
-      card.classList.toggle('active', idx === activeIdx);
-    });
-  }
 
   function updateFileCount() {
     var node = $id('file-count');
@@ -499,7 +471,6 @@
     add.appendChild(el('span', 'gallery-add-text', '添加'));
     add.addEventListener('click', function () { $id('file-input').click(); });
     host.appendChild(add);
-    applyDockScale();
   }
 
   /* ------------------------------------------------------------------ *
@@ -632,49 +603,76 @@
     });
   }
 
-  function renderExif(options) {
+  /* 常用模式：固定 15 行水印字段，全部可编辑（与照片有无 EXIF 无关）。 */
+  function renderWatermarkFields(file) {
     var body = $id('exif-body');
-    var file = activeFile();
-    if (!file) {
-      body.textContent = '';
-      body.appendChild(el('div', 'placeholder', '载入图片后在这里查看完整 EXIF、XMP、IPTC、ICC 与 PNG 文本块。'));
-      updateExifActions();
-      return;
-    }
-    if (options && options.resetView) app.exifView = null;
-    else captureExifView();
-    body.textContent = '';
+    var summary = file.report.summary || {};
+    var details = document.createElement('details');
+    details.className = 'exif-group watermark-fields';
+    details.dataset.group = 'watermark';
+    details.open = app.exifView && app.exifView.open.watermark != null
+      ? app.exifView.open.watermark
+      : true;
+    var groupSummary = document.createElement('summary');
+    groupSummary.appendChild(el('span', null, '水印字段'));
+    groupSummary.appendChild(el('span', 'badge', String(meta.WATERMARK_FIELDS.length)));
+    details.appendChild(groupSummary);
 
-    file.report.groups.forEach(function (group, index) {
-      var visibilities = group.rows.map(function (row) { return meta.rowVisibility(group.id, row); });
-      var gv = meta.groupVisibility(group.id, group.rows);
-      // 「只看常用」时 coreCount 为 0 的整组直接不渲染（省一次无效展开动作）。
-      if (!app.exifShowAll && gv.hiddenWhenScoped) return;
+    meta.WATERMARK_FIELDS.forEach(function (def) {
+      var field = def.field;
+      var display = meta.formatFieldDisplay(field, summary);
+      var edited = !!(file.edits && file.edits.fields && file.edits.fields[field]);
+      var row = { name: def.label, value: display, source: 'EXIF' };
+      var rowEl = el('div', 'exif-row');
+      rowEl.dataset.field = field;
+      rowEl.dataset.search = [def.label, def.cn, field, display].join(' ').toLowerCase();
+      if (edited) rowEl.classList.add('edited');
+      var nameEl = el('div', 'exif-name');
+      nameEl.appendChild(document.createTextNode(def.label));
+      nameEl.appendChild(el('small', null, def.cn));
+      var valueEl = el('div', 'exif-value');
+      if (display) {
+        valueEl.appendChild(document.createTextNode(display));
+      } else {
+        valueEl.classList.add('is-empty');
+        valueEl.appendChild(el('span', 'exif-empty', '未填'));
+      }
+      if (edited && display) valueEl.appendChild(el('span', 'exif-edited-dot'));
+      valueEl.classList.add('editable');
+      valueEl.title = '双击修改或填入（仅影响水印与界面）';
+      valueEl.addEventListener('dblclick', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        beginExifEdit(row, field, 'watermark|' + field, valueEl);
+      });
+      rowEl.appendChild(nameEl);
+      rowEl.appendChild(valueEl);
+      details.appendChild(rowEl);
+    });
+    body.appendChild(details);
+  }
+
+  /* 全部模式：原分组全量列出，只读。 */
+  function renderRawGroups(file) {
+    var body = $id('exif-body');
+    file.report.groups.forEach(function (group) {
       var details = document.createElement('details');
       details.className = 'exif-group' + (group.id === 'warn' ? ' warn' : '');
       details.dataset.group = group.id;
       details.open = app.exifView && app.exifView.open[group.id] != null
         ? app.exifView.open[group.id]
-        : (app.exifShowAll || gv.openWhenScoped);
+        : true;
       var groupSummary = document.createElement('summary');
       groupSummary.appendChild(el('span', null, group.title));
-      var badgeText = app.exifShowAll ? String(group.rows.length) : gv.coreCount + '/' + group.rows.length;
-      groupSummary.appendChild(el('span', 'badge', badgeText));
+      groupSummary.appendChild(el('span', 'badge', String(group.rows.length)));
       details.appendChild(groupSummary);
 
       group.rows.forEach(function (row, rowIndex) {
         var rowEl = el('div', 'exif-row');
         var field = fieldForRow(row);
-        var key = rowIdentity(group, row, rowIndex);
-        var search = [row.name, row.value, row.note, row.tag, row.source].filter(Boolean).join(' ').toLowerCase();
-        rowEl.dataset.search = search;
-        if (visibilities[rowIndex] === 'extra') {
-          rowEl.dataset.vis = 'extra';
-          rowEl.classList.add('exif-extra');
-          rowEl.hidden = !app.exifShowAll;
-        } else {
-          rowEl.dataset.vis = 'core';
-        }
+        rowEl.dataset.search = [row.name, row.value, row.note, row.tag, row.source]
+          .filter(Boolean).join(' ').toLowerCase();
+        rowEl.dataset.vis = 'all';
         if (row.edited) rowEl.classList.add('edited');
         if (field) rowEl.dataset.field = field;
         var nameEl = el('div', 'exif-name');
@@ -693,22 +691,28 @@
           valueEl.appendChild(document.createTextNode(row.value || '—'));
         }
         if (row.note) valueEl.appendChild(el('span', 'exif-note', row.note));
-        if (row.edited && !row.url) valueEl.appendChild(el('span', 'exif-edited-dot'));
-        if (isRowEditable(row)) {
-          valueEl.classList.add('editable');
-          valueEl.title = '双击修改' + (field ? '（会影响水印）' : '（仅面板显示）');
-          valueEl.addEventListener('dblclick', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            beginExifEdit(row, field, key, valueEl);
-          });
-        }
         rowEl.appendChild(nameEl);
         rowEl.appendChild(valueEl);
         details.appendChild(rowEl);
       });
       body.appendChild(details);
     });
+  }
+
+  function renderExif(options) {
+    var body = $id('exif-body');
+    var file = activeFile();
+    if (!file) {
+      body.textContent = '';
+      body.appendChild(el('div', 'placeholder', '载入图片后，这里固定列出所有可上水印的字段，可直接填写。'));
+      updateExifActions();
+      return;
+    }
+    if (options && options.resetView) app.exifView = null;
+    else captureExifView();
+    body.textContent = '';
+    if (app.exifShowAll) renderRawGroups(file);
+    else renderWatermarkFields(file);
     if (app.exifView) body.scrollTop = app.exifView.scrollTop || 0;
     else body.scrollTop = 0;
     if ($id('exif-search').value.trim()) filterExif();
@@ -735,16 +739,12 @@
       var any = false;
       var rows = group.querySelectorAll('.exif-row');
       Array.prototype.forEach.call(rows, function (row) {
-        var isExtra = row.dataset.vis === 'extra';
-        if (isExtra && !app.exifShowAll) {
-          row.hidden = true;
-          return;
-        }
         var show = !q || (row.dataset.search || '').indexOf(q) >= 0;
         row.hidden = !show;
         if (show) any = true;
       });
-      group.hidden = !any;
+      // 常用模式下固定只有一张卡，空查询时始终显示
+      group.hidden = q ? !any : false;
       if (q && any) group.open = true;
     });
   }
@@ -1652,7 +1652,9 @@
     var select = document.createElement('select');
     select.className = 'select';
     select.dataset.path = ctrl.path;
-    row.wrap.appendChild(select);
+    var shell = el('div', 'select-shell');
+    shell.appendChild(select);
+    row.wrap.appendChild(shell);
     var kind = ctrl.options === 'brands' ? 'brands' : ctrl.options === 'logos' ? 'logos' : 'static';
     function fill() {
       var previous = select.value;
@@ -2595,6 +2597,18 @@
     });
     var galleryAdd = $id('btn-gallery-add');
     if (galleryAdd) galleryAdd.addEventListener('click', openFilePicker);
+
+    // 底部图片列表：图片过多时用鼠标滚轮左右滑动
+    var galleryRow = $id('bottom-gallery');
+    if (galleryRow) {
+      galleryRow.addEventListener('wheel', function (e) {
+        if (galleryRow.scrollWidth <= galleryRow.clientWidth + 1) return;
+        var delta = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+        if (!delta) return;
+        e.preventDefault();
+        galleryRow.scrollLeft += delta;
+      }, { passive: false });
+    }
 
     var dragCount = 0;
     function hasFiles(e) {
