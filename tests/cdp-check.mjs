@@ -854,7 +854,8 @@ async function main() {
       document.querySelectorAll('#controls details').forEach((d) => { d.open = true; });
       await sleep(120);
       for (const template of WM.state.TEMPLATES.map((t) => t.id)) {
-        document.querySelector('.template-card[data-id="' + template + '"]').click();
+        const card = document.querySelector('.template-card[data-id="' + template + '"]');
+        if (!card.classList.contains('active')) card.click();
         await sleep(350);
         const ranges = Array.from(document.querySelectorAll('#controls input[type="range"]'))
           .filter((el) => el.offsetParent !== null && el.dataset.path && el.dataset.path.indexOf('output.') !== 0)
@@ -921,7 +922,11 @@ async function main() {
         }
         return h;
       };
-      const template = (id) => qs('.template-card[data-id="' + id + '"]').click();
+      const template = (id) => {
+        const el = qs('.template-card[data-id="' + id + '"]');
+        if (el && !el.classList.contains('active')) el.click();
+        return el;
+      };
       const selectValue = (path, value) => {
         const el = qs('#controls select[data-path="' + path + '"]');
         if (!el) return false;
@@ -942,6 +947,13 @@ async function main() {
       const textOps = () => (WM.ui.state.lastScene ? WM.ui.state.lastScene.ops : [])
         .filter((op) => op.kind === 'text');
       const result = {};
+      // 保证至少有一张照片，不依赖 ?demo 的异步加载时机
+      if (!WM.ui.state.files.length) {
+        const res = await fetch('fixtures/canon-r5.jpg');
+        const blob = await res.blob();
+        await WM.ui.addFiles([new File([blob], 'canon-r5.jpg', { type: 'image/jpeg' })]);
+        await sleep(1200);
+      }
       document.querySelectorAll('#controls details').forEach((d) => { d.open = true; });
 
       template('param-panel');
@@ -1252,32 +1264,33 @@ async function main() {
       await sleep(250);
       result.exifScope.restoredRows = document.querySelectorAll('#exif-body .exif-row').length;
 
-      // 预览缩放：− 缩小 / ◯ 自适应 / 自适应下 + 不再放大
+      // 预览缩放：滚轮缩小 / 放大封顶在自适应 / 双击恢复自适应
+      const stageEl = document.getElementById('stage');
       const canvasEl = document.getElementById('preview');
       const canvasH = () => Math.round(canvasEl.getBoundingClientRect().height);
+      const wheel = (dy) => stageEl.dispatchEvent(new WheelEvent('wheel', { deltaY: dy, bubbles: true, cancelable: true }));
       const fitH = canvasH();
-      document.getElementById('zoom-out').click();
-      await sleep(120);
-      document.getElementById('zoom-out').click();
-      await sleep(220);
-      const zoomedH = canvasH();
-      const zoomBtnState = {
-        out: document.getElementById('zoom-out').disabled,
-        inn: document.getElementById('zoom-in').disabled
-      };
-      document.getElementById('zoom-fit').click();
-      await sleep(220);
+      wheel(120);
+      wheel(120);
+      await sleep(240);
+      const zoomedOutH = canvasH();
+      wheel(-120);
+      await sleep(240);
+      const midH = canvasH();
+      stageEl.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+      await sleep(240);
       const restoredH = canvasH();
-      const innAtFit = document.getElementById('zoom-in').disabled;
-      document.getElementById('zoom-in').click();
-      await sleep(220);
+      wheel(-120);
+      wheel(-120);
+      await sleep(240);
       const maxH = canvasH();
-      result.zoom = { fitH, zoomedH, restoredH, maxH, zoomBtnState, innAtFit, pill: !!document.getElementById('zoom-pill') };
+      result.zoom = { fitH, zoomedOutH, midH, restoredH, maxH, hasPill: !!document.getElementById('zoom-pill') };
 
       // 所有二级卡片默认展开；胶片拆成「胶片样式 / 打印内容」
       const sectionState = {};
       for (const tid of WM.state.TEMPLATES.map((t) => t.id)) {
-        document.querySelector('.template-card[data-id="' + tid + '"]').click();
+        const cardEl = document.querySelector('.template-card[data-id="' + tid + '"]');
+        if (!cardEl.classList.contains('active')) cardEl.click();
         await sleep(320);
         const secs = Array.from(document.querySelectorAll('#controls .ctrl-section'))
           .filter((el) => !el.hidden);
@@ -1290,7 +1303,8 @@ async function main() {
       result.sections = sectionState;
 
       // 显示内容按字段条件出现
-      document.querySelector('.template-card[data-id="param-panel"]').click();
+      const paramCard = document.querySelector('.template-card[data-id="param-panel"]');
+      if (!paramCard.classList.contains('active')) paramCard.click();
       await sleep(320);
       const chip = (f) => document.querySelector('#controls .chip[data-field="' + f + '"]');
       chip('location').click();
@@ -1305,7 +1319,8 @@ async function main() {
       result.conditions = { locationHidden, customShown };
 
       // DV 全扁平
-      document.querySelector('.template-card[data-id="dv-cam"]').click();
+      const dvCard = document.querySelector('.template-card[data-id="dv-cam"]');
+      if (!dvCard.classList.contains('active')) dvCard.click();
       await sleep(420);
       const dvScene = WM.ui.state.lastScene;
       result.dvFlat = {
@@ -1394,11 +1409,11 @@ async function main() {
       result.exifScope.scopedRows === result.exifScope.expectedFields &&
       result.exifScope.scopedEditable === result.exifScope.expectedFields &&
       result.exifScope.rawGroups > 1 && result.exifScope.rawEditable === 0 &&
-      result.zoom && result.zoom.pill && result.zoom.zoomedH < result.zoom.fitH &&
+      result.zoom && result.zoom.hasPill === false &&
+      result.zoom.zoomedOutH < result.zoom.fitH &&
+      result.zoom.midH > result.zoom.zoomedOutH && result.zoom.midH < result.zoom.fitH &&
       Math.abs(result.zoom.restoredH - result.zoom.fitH) <= 2 &&
       Math.abs(result.zoom.maxH - result.zoom.fitH) <= 2 &&
-      result.zoom.zoomBtnState.out === false && result.zoom.zoomBtnState.inn === false &&
-      result.zoom.innAtFit === true &&
       result.sections && Object.keys(result.sections).length === 6 &&
       Object.keys(result.sections).every((k) => result.sections[k].allOpen) &&
       result.sections['film-frame'].sections === 3 &&
@@ -1551,7 +1566,7 @@ async function main() {
     const templates = ['param-panel', 'polaroid', 'bottom-bar', 'film-frame', 'dv-cam', 'tile-copyright'];
     const files = [];
     for (const template of templates) {
-      await evaluate(`document.querySelector('.template-card[data-id="${template}"]').click()`);
+      await evaluate(`(() => { const c = document.querySelector('.template-card[data-id="${template}"]'); if (!c.classList.contains('active')) c.click(); return true; })()`);
       await sleep(900);
       const probeNow = JSON.parse(await evaluate(probe));
       const shot = await send('Page.captureScreenshot', { format: 'png' });
@@ -1567,7 +1582,7 @@ async function main() {
       fs.writeFileSync(file, Buffer.from(shot.data, 'base64'));
       files.push({ template: name, file, canvas: probeNow.canvas, status: probeNow.status, banner: probeNow.banner });
     }
-    await evaluate(`document.querySelector('.template-card[data-id="film-frame"]').click()`);
+    await evaluate(`(() => { const c = document.querySelector('.template-card[data-id="film-frame"]'); if (!c.classList.contains('active')) c.click(); return true; })()`);
     await sleep(400);
     await evaluate(`(() => {
       const el = document.querySelector('#controls .ctrl-row[data-path="film.type"] .seg-btn[data-value="bw-negative"]');
@@ -1622,7 +1637,7 @@ async function main() {
       return true;
     })()`);
 
-    await evaluate(`document.querySelector('.template-card[data-id="bottom-bar"]').click()`);
+    await evaluate(`(() => { const c = document.querySelector('.template-card[data-id="bottom-bar"]'); if (!c.classList.contains('active')) c.click(); return true; })()`);
     await sleep(400);
     await evaluate(`(() => {
       const el = document.querySelector('#controls select[data-path="bottomBar.logoPosition"]');
@@ -1631,7 +1646,7 @@ async function main() {
     })()`);
     await captureState('bottom-bar-logo-left');
 
-    await evaluate(`document.querySelector('.template-card[data-id="dv-cam"]').click()`);
+    await evaluate(`(() => { const c = document.querySelector('.template-card[data-id="dv-cam"]'); if (!c.classList.contains('active')) c.click(); return true; })()`);
     await sleep(400);
     await evaluate(`(() => {
       const el = document.querySelector('#controls select[data-path="dv.centerFocus"]');
@@ -1718,6 +1733,73 @@ async function main() {
     if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));
     if (consoleMessages.length) console.log('控制台：\n' + consoleMessages.slice(-10).join('\n'));
     const healthy = state && state.controls > 2 && !state.banner;
+    stopChrome();
+    process.exit(healthy ? 0 : 1);
+  } else if (mode === 'mock') {
+    const expression = `(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const box = document.getElementById('empty-state');
+      const rect = box.getBoundingClientRect();
+      const cs = getComputedStyle(box);
+      const canvas = document.getElementById('empty-canvas');
+      const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let canvasBlank = true;
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] !== 0) { canvasBlank = false; break; }
+      }
+      const card = (id) => document.querySelector('.template-card[data-id="' + id + '"]');
+      const activeCount = () => document.querySelectorAll('.template-card.active').length;
+
+      card('bottom-bar').click();
+      await sleep(450);
+      const afterSelect = {
+        template: WM.ui.settings.template,
+        active: activeCount()
+      };
+      card('bottom-bar').click();
+      await sleep(400);
+      const afterToggle = {
+        template: WM.ui.settings.template,
+        active: activeCount()
+      };
+      card('film-frame').click();
+      await sleep(400);
+      card('film-frame').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
+      await sleep(400);
+      const afterDbl = {
+        template: WM.ui.settings.template,
+        active: activeCount()
+      };
+
+      return JSON.stringify({
+        ratio: Number((rect.width / rect.height).toFixed(3)),
+        radius: cs.borderRadius,
+        prompt: (document.querySelector('.empty-title') || {}).textContent || '',
+        canvasBlank,
+        topbarOpen: !!document.getElementById('btn-open'),
+        topbarDemo: !!document.getElementById('btn-demo'),
+        previewHidden: document.getElementById('preview').hidden,
+        emptyVisible: !box.hidden,
+        afterSelect,
+        afterToggle,
+        afterDbl,
+        banner: (document.getElementById('wm-error-banner') || {}).textContent || ''
+      });
+    })()`;
+    const raw = await evaluate(expression);
+    const result = JSON.parse(raw);
+    console.log(JSON.stringify(result, null, 2));
+    if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));
+    const healthy = Math.abs(result.ratio - 1.5) <= 0.02 &&
+      result.radius === '0px' &&
+      result.prompt.indexOf('拖入') >= 0 &&
+      result.canvasBlank &&
+      result.topbarOpen === false && result.topbarDemo === false &&
+      result.previewHidden && result.emptyVisible &&
+      result.afterSelect.template === 'bottom-bar' && result.afterSelect.active === 1 &&
+      result.afterToggle.template === '' && result.afterToggle.active === 0 &&
+      result.afterDbl.template === '' && result.afterDbl.active === 0 &&
+      !result.banner;
     stopChrome();
     process.exit(healthy ? 0 : 1);
   } else if (mode === 'export') {

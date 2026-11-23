@@ -393,7 +393,7 @@
     var templateIds = TEMPLATES.map(function (t) { return t.id; });
     var migrated = { 'corner-badge': 'param-panel', 'film-bar': 'param-panel', 'frame-line': 'dv-cam' };
     if (migrated[s.template]) s.template = migrated[s.template];
-    if (templateIds.indexOf(s.template) < 0) s.template = DEFAULTS.template;
+    if (s.template !== '' && templateIds.indexOf(s.template) < 0) s.template = DEFAULTS.template;
     if (['jpeg', 'png', 'webp'].indexOf(s.output.format) < 0) s.output.format = 'jpeg';
     if (['original', 'longEdge', 'percent'].indexOf(s.output.resize) < 0) s.output.resize = 'original';
     if (['none', 'solid', 'glass', 'gradient'].indexOf(s.panel.style) < 0) s.panel.style = 'glass';

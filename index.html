@@ -33,8 +33,6 @@
       </div>
     </div>
     <div class="top-actions">
-      <button type="button" id="btn-open" class="btn btn-primary">选择图片</button>
-      <button type="button" id="btn-demo" class="btn btn-ghost" hidden>载入示例</button>
       <button type="button" id="btn-help" class="icon-btn" title="快捷键与说明" aria-label="快捷键与说明">?</button>
       <div id="theme-switch" class="theme-switch" role="group" aria-label="界面明暗主题">
         <button type="button" data-theme-mode="dark" title="黑暗" aria-label="黑暗" aria-pressed="false">☾</button>
@@ -72,20 +70,16 @@
           <button type="button" id="btn-compare" tabindex="-1">对比原图</button>
         </div>
         <div id="stage" class="stage">
-          <button type="button" id="empty-state" class="empty-state">
-            <span class="empty-icon" aria-hidden="true">◫</span>
-            <strong class="empty-title">拖入一张照片</strong>
-            <span class="empty-line">点击选择，或 Ctrl+V 粘贴</span>
-            <span class="empty-note">本地处理，不上传</span>
-          </button>
+          <div id="empty-state" class="empty-photo" role="button" tabindex="0" aria-label="拖入一张照片，或点击选择">
+            <canvas id="empty-canvas" class="empty-canvas" aria-hidden="true"></canvas>
+            <div class="empty-copy">
+              <span class="empty-icon" aria-hidden="true">◫</span>
+              <strong class="empty-title">拖入一张照片</strong>
+              <span class="empty-line">点击选择，或 Ctrl+V 粘贴</span>
+              <span class="empty-note">本地处理，不上传</span>
+            </div>
+          </div>
           <canvas id="preview" class="preview-canvas" hidden></canvas>
-        </div>
-        <div id="zoom-pill" class="zoom-pill" role="group" aria-label="预览缩放" hidden>
-          <button type="button" id="zoom-out" class="zoom-btn" title="缩小" aria-label="缩小">−</button>
-          <span class="zoom-sep" aria-hidden="true"></span>
-          <button type="button" id="zoom-fit" class="zoom-btn" title="自适应大小" aria-label="自适应大小">◯</button>
-          <span class="zoom-sep" aria-hidden="true"></span>
-          <button type="button" id="zoom-in" class="zoom-btn" title="放大" aria-label="放大">+</button>
         </div>
       </section>
 

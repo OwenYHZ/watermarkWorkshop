@@ -140,7 +140,7 @@
     var bottomBar = s.bottomBar || {};
     var tile = s.tile || {};
     return {
-      template: s.template || 'param-panel',
+      template: s.template === '' ? '' : (s.template || 'param-panel'),
       fields: fields,
       text: {
         family: text.family || 'sans',
@@ -200,7 +200,7 @@
       },
       film: {
         type: film.type || 'color-negative',
-        orientation: film.orientation || 'auto',
+        orientation: film.orientation || 'horizontal',
         holeColor: film.holeColor || 'white',
         printStyle: film.printStyle || 'pentax',
         stock: film.stock || '',
@@ -1642,6 +1642,14 @@
 
     var scene = baseScene();
     scene.template = s.template;
+    // 允许不选模板：只输出原图，不叠加任何水印。
+    if (!s.template) {
+      applyContainer(scene, W, H);
+      scene.meta = input.meta || {};
+      scene.settings = s;
+      scene.tokens = tokens;
+      return scene;
+    }
     scene.textColor = computeContrast(s, s.template, photoLum);
     scene.logoVariant = logoVariantFor(s, scene.textColor);
 

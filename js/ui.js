@@ -145,6 +145,7 @@
   }
 
   function templateName(id) {
+    if (!id) return '无模板';
     var t = state.TEMPLATES.find(function (x) { return x.id === id; });
     return t ? t.name : id;
   }
@@ -891,9 +892,9 @@
     if (!file) {
       canvas.hidden = true;
       empty.hidden = false;
-      var zoomPill = $id('zoom-pill');
-      if (zoomPill) zoomPill.hidden = true;
       applyPhotoTheme(null);
+      applyEmptyFit();
+      renderMockPreview();
       $id('preview-dims').textContent = '—';
       $id('preview-brand').textContent = '';
       $id('preview-template').textContent = templateName(settings.template);
@@ -1019,10 +1020,7 @@
 
   function applyPreviewZoom() {
     var canvas = $id('preview');
-    var pill = $id('zoom-pill');
-    var hasFile = !!activeFile();
-    if (pill) pill.hidden = !hasFile;
-    if (!canvas || !hasFile) return;
+    if (!canvas || !activeFile()) return;
     if (!app.previewFit.w || !app.previewFit.h) measurePreviewFit();
     var w = Math.max(1, Math.round(app.previewFit.w * app.previewZoom));
     var h = Math.max(1, Math.round(app.previewFit.h * app.previewZoom));
@@ -1030,10 +1028,6 @@
     canvas.style.height = h + 'px';
     canvas.style.maxWidth = 'none';
     canvas.style.maxHeight = 'none';
-    var out = $id('zoom-out');
-    var inn = $id('zoom-in');
-    if (out) out.disabled = app.previewZoom <= ZOOM_MIN + 0.001;
-    if (inn) inn.disabled = app.previewZoom >= 0.999;
   }
 
   function setPreviewZoom(value) {
@@ -1042,8 +1036,42 @@
     applyPreviewZoom();
   }
 
+  /* 无图状态：3:2 磨砂方块按舞台自适应 */
+  function applyEmptyFit() {
+    var stage = $id('stage');
+    var box = $id('empty-state');
+    if (!stage || !box || box.hidden) return;
+    var style = getComputedStyle(stage);
+    var padX = (parseFloat(style.paddingLeft) || 0) + (parseFloat(style.paddingRight) || 0);
+    var padY = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+    var availW = stage.clientWidth - padX;
+    var availH = stage.clientHeight - padY;
+    if (availW <= 0 || availH <= 0) return;
+    var w = availW;
+    var h = w * 2 / 3;
+    if (h > availH) { h = availH; w = h * 3 / 2; }
+    box.style.width = Math.max(1, Math.round(w)) + 'px';
+    box.style.height = Math.max(1, Math.round(h)) + 'px';
+  }
+
+  /* 无图状态也在画布上渲染当前模板，模拟一张照片导入后的样子 */
+  function renderMockPreview() {
+    // 没有照片时只保留 3:2 的磨砂占位方块；
+    // 模板选择仍然生效（存入 settings），导入照片后立刻应用。
+    var canvas = $id('empty-canvas');
+    if (!canvas) return;
+    canvas.width = 1200;
+    canvas.height = 800;
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    app.lastScene = null;
+  }
+
   function refreshPreviewFit() {
-    if (!activeFile()) return;
+    if (!activeFile()) {
+      applyEmptyFit();
+      return;
+    }
     measurePreviewFit();
     applyPreviewZoom();
   }
@@ -1430,8 +1458,16 @@
       btn.appendChild(el('span', null, t.desc));
       btn.dataset.id = t.id;
       btn.addEventListener('click', function () {
-        settings.template = t.id;
-        buttons.forEach(function (b) { b.classList.toggle('active', b.dataset.id === t.id); });
+        settings.template = settings.template === t.id ? '' : t.id;
+        buttons.forEach(function (b) { b.classList.toggle('active', b.dataset.id === settings.template); });
+        refreshControls();
+        saveAndPreview();
+      });
+      btn.addEventListener('dblclick', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        settings.template = '';
+        buttons.forEach(function (b) { b.classList.remove('active'); });
         refreshControls();
         saveAndPreview();
       });
@@ -2611,7 +2647,6 @@
   }
 
   function bindEvents() {
-    $id('btn-open').addEventListener('click', openFilePicker);
     var emptyState = $id('empty-state');
     if (emptyState) {
       emptyState.addEventListener('click', openFilePicker);
@@ -2634,7 +2669,6 @@
       if (this.files && this.files[0]) importPresetsFile(this.files[0]);
       this.value = '';
     });
-    $id('btn-demo').addEventListener('click', function () { loadDemo('canon-r5.jpg'); });
     $id('btn-help').addEventListener('click', showHelp);
     $id('btn-compare').addEventListener('pointerdown', function () {
       app.compareOriginal = true;
@@ -2647,11 +2681,25 @@
         schedulePreview();
       });
     });
-    $id('zoom-out').addEventListener('click', function () { setPreviewZoom(app.previewZoom - ZOOM_STEP); });
-    $id('zoom-in').addEventListener('click', function () { setPreviewZoom(app.previewZoom + ZOOM_STEP); });
-    $id('zoom-fit').addEventListener('click', function () { app.previewZoom = 1; refreshPreviewFit(); });
+    var stageEl = $id('stage');
+    if (stageEl) {
+      // 滚轮缩放：最大 = 自适应；向上滚放大，向下滚缩小
+      stageEl.addEventListener('wheel', function (e) {
+        if (!activeFile()) return;
+        var delta = e.deltaY || e.deltaX;
+        if (!delta) return;
+        e.preventDefault();
+        setPreviewZoom(app.previewZoom + (delta < 0 ? ZOOM_STEP : -ZOOM_STEP));
+      }, { passive: false });
+      // 双击恢复自适应大小
+      stageEl.addEventListener('dblclick', function (e) {
+        if (!activeFile()) return;
+        e.preventDefault();
+        app.previewZoom = 1;
+        refreshPreviewFit();
+      });
+    }
     window.addEventListener('resize', function () {
-      if (!activeFile()) return;
       if (app.zoomRaf) cancelAnimationFrame(app.zoomRaf);
       app.zoomRaf = requestAnimationFrame(function () {
         app.zoomRaf = 0;
@@ -2662,7 +2710,6 @@
       var stageWatch = $id('stage');
       if (stageWatch) {
         var ro = new ResizeObserver(function () {
-          if (!activeFile()) return;
           if (app.zoomRaf) cancelAnimationFrame(app.zoomRaf);
           app.zoomRaf = requestAnimationFrame(function () {
             app.zoomRaf = 0;
@@ -2800,9 +2847,6 @@
     renderFileList();
     updateExportButtons();
     updateExportSummary();
-    if (location.protocol !== 'file:') {
-      $id('btn-demo').hidden = false;
-    }
     var params = new URLSearchParams(location.search);
     loadStoredLogos().then(function () {
       if (params.has('demo') && location.protocol !== 'file:') {
