@@ -1055,16 +1055,111 @@
   }
 
   /* 无图状态也在画布上渲染当前模板，模拟一张照片导入后的样子 */
-  function renderMockPreview() {
-    // 没有照片时只保留 3:2 的磨砂占位方块；
-    // 模板选择仍然生效（存入 settings），导入照片后立刻应用。
-    var canvas = $id('empty-canvas');
-    if (!canvas) return;
+  /* 无图状态：一张空白参考照片 + 当前模板的水印预览 */
+  function mockPhotoCanvas() {
+    var canvas = document.createElement('canvas');
     canvas.width = 1200;
     canvas.height = 800;
     var ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    app.lastScene = null;
+    var g = ctx.createLinearGradient(0, 0, 1200, 800);
+    g.addColorStop(0, '#cfd7d5');
+    g.addColorStop(0.48, '#eae6df');
+    g.addColorStop(1, '#c2c9c8');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 1200, 800);
+    var soft = ctx.createRadialGradient(430, 300, 40, 430, 300, 520);
+    soft.addColorStop(0, 'rgba(255, 255, 255, 0.42)');
+    soft.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = soft;
+    ctx.fillRect(0, 0, 1200, 800);
+    return canvas;
+  }
+
+  function mockSummary() {
+    var summary = meta.buildSummary({
+      format: 'jpeg',
+      dimensions: { width: 1200, height: 800 },
+      file: { name: 'sample.jpg', size: 2400000 },
+      exif: null,
+      warnings: []
+    });
+    summary.make = 'Canon';
+    summary.model = 'EOS R5';
+    summary.modelFull = 'Canon EOS R5';
+    summary.lens = 'RF24-70mm F2.8 L IS USM';
+    summary.focal = 50;
+    summary.focalText = '50mm';
+    summary.aperture = 2.8;
+    summary.apertureText = 'f/2.8';
+    summary.shutter = 1 / 250;
+    summary.shutterText = '1/250s';
+    summary.iso = 400;
+    summary.isoText = 'ISO 400';
+    summary.exposureComp = 0.3;
+    summary.exposureCompText = '+0.3';
+    summary.exposureMode = 'A';
+    summary.exposureModeText = 'Av';
+    summary.date = meta.parseDateParts('2024-05-01 12:34:56');
+    summary.datetimeRaw = '2024-05-01 12:34:56';
+    summary.offset = '+08:00';
+    summary.latitude = 30.2701;
+    summary.longitude = 120.1551;
+    summary.altitude = 40;
+    summary.coordText = meta.formatCoord(30.2701, 120.1551);
+    summary.artist = 'Owen';
+    summary.copyright = '© 2024';
+    summary.filename = 'sample.jpg';
+    return summary;
+  }
+
+  function renderMockPreview() {
+    var canvas = $id('empty-canvas');
+    var box = $id('empty-state');
+    if (!canvas) return;
+    var hasTemplate = !!settings.template;
+    if (box) box.classList.toggle('has-template', hasTemplate);
+    if (!hasTemplate) {
+      canvas.width = 1200;
+      canvas.height = 800;
+      canvas.getContext('2d').clearRect(0, 0, 1200, 800);
+      app.lastScene = null;
+      return;
+    }
+    var photo = mockPhotoCanvas();
+    var summary = mockSummary();
+    var fmt = previewDateFormatter();
+    // 二分搜索照片宽度，让模板整体输出尽量接近 3:2，
+    // 这样白边/胶片/拍立得的外框也能完整铺满这块参考照片。
+    function composeMock(w) {
+      return layout.compose({
+        imageW: w,
+        imageH: 800,
+        meta: summary,
+        settings: settings,
+        brandName: 'Canon',
+        logoAspect: 3,
+        logoEnabled: false,
+        luminance: 0.55,
+        remoteLocation: '',
+        formatDateOnly: fmt.date,
+        formatTimeOnly: fmt.time
+      });
+    }
+    var lo = 240;
+    var hi = 4200;
+    var scene = composeMock(1200);
+    var bestDiff = Math.abs(scene.output.w / scene.output.h - 1.5);
+    for (var i = 0; i < 10; i++) {
+      var mid = Math.round((lo + hi) / 2);
+      var trial = composeMock(mid);
+      var ratio = trial.output.w / trial.output.h;
+      var diff = Math.abs(ratio - 1.5);
+      if (diff < bestDiff) { bestDiff = diff; scene = trial; }
+      if (diff < 0.002) break;
+      if (ratio < 1.5) lo = mid; else hi = mid;
+    }
+    render.draw(canvas, scene, { photo: photo, logo: null });
+    app.lastScene = scene;
   }
 
   function refreshPreviewFit() {

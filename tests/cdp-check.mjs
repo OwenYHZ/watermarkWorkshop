@@ -1743,24 +1743,38 @@ async function main() {
       const cs = getComputedStyle(box);
       const canvas = document.getElementById('empty-canvas');
       const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-      let canvasBlank = true;
+      let canvasFilled = false;
       for (let i = 3; i < data.length; i += 4) {
-        if (data[i] !== 0) { canvasBlank = false; break; }
+        if (data[i] !== 0) { canvasFilled = true; break; }
       }
       const card = (id) => document.querySelector('.template-card[data-id="' + id + '"]');
       const activeCount = () => document.querySelectorAll('.template-card.active').length;
 
+      const promptDisplay = () => getComputedStyle(document.querySelector('.empty-copy')).display;
       card('bottom-bar').click();
-      await sleep(450);
+      await sleep(500);
+      const data2 = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+      let canvasAfterSelect = false;
+      for (let i = 3; i < data2.length; i += 4) {
+        if (data2[i] !== 0) { canvasAfterSelect = true; break; }
+      }
+      const selectedScene = WM.ui.state.lastScene;
       const afterSelect = {
         template: WM.ui.settings.template,
-        active: activeCount()
+        active: activeCount(),
+        canvasFilled: canvasAfterSelect,
+        hasTemplateClass: box.classList.contains('has-template'),
+        promptVisible: promptDisplay() !== 'none',
+        ops: selectedScene ? selectedScene.ops.length : 0,
+        ratio: selectedScene ? Number((selectedScene.output.w / selectedScene.output.h).toFixed(3)) : 0
       };
       card('bottom-bar').click();
       await sleep(400);
       const afterToggle = {
         template: WM.ui.settings.template,
-        active: activeCount()
+        active: activeCount(),
+        promptShown: promptDisplay() !== 'none',
+        hasTemplateClass: box.classList.contains('has-template')
       };
       card('film-frame').click();
       await sleep(400);
@@ -1775,7 +1789,7 @@ async function main() {
         ratio: Number((rect.width / rect.height).toFixed(3)),
         radius: cs.borderRadius,
         prompt: (document.querySelector('.empty-title') || {}).textContent || '',
-        canvasBlank,
+        canvasFilled,
         topbarOpen: !!document.getElementById('btn-open'),
         topbarDemo: !!document.getElementById('btn-demo'),
         previewHidden: document.getElementById('preview').hidden,
@@ -1793,11 +1807,15 @@ async function main() {
     const healthy = Math.abs(result.ratio - 1.5) <= 0.02 &&
       result.radius === '0px' &&
       result.prompt.indexOf('拖入') >= 0 &&
-      result.canvasBlank &&
+      result.canvasFilled &&
       result.topbarOpen === false && result.topbarDemo === false &&
       result.previewHidden && result.emptyVisible &&
       result.afterSelect.template === 'bottom-bar' && result.afterSelect.active === 1 &&
+      result.afterSelect.canvasFilled && result.afterSelect.hasTemplateClass &&
+      result.afterSelect.promptVisible && result.afterSelect.ops > 0 &&
+      Math.abs(result.afterSelect.ratio - 1.5) <= 0.02 &&
       result.afterToggle.template === '' && result.afterToggle.active === 0 &&
+      result.afterToggle.promptShown && result.afterToggle.hasTemplateClass === false &&
       result.afterDbl.template === '' && result.afterDbl.active === 0 &&
       !result.banner;
     stopChrome();
