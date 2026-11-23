@@ -1,0 +1,29 @@
+{
+  "name": "exif-watermark-studio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "本地离线 EXIF 查看与水印生成工具（零依赖）",
+  "scripts": {
+    "start": "node server.mjs",
+    "serve": "node server.mjs",
+    "test": "node --test --test-isolation=none tests/parser.test.mjs tests/layout.test.mjs tests/export.test.mjs",
+    "fixtures": "python tools/make-fixtures.py",
+    "browser-test": "node tests/cdp-check.mjs selftest http://127.0.0.1:5173/tests/browser-selftest.html",
+    "browser-check": "node tests/cdp-check.mjs app http://127.0.0.1:5173/?demo=canon-r5.jpg",
+    "browser-controls": "node tests/cdp-check.mjs controls http://127.0.0.1:5173/?demo=canon-r5.jpg",
+    "browser-files": "node tests/cdp-check.mjs files http://127.0.0.1:5173/",
+    "browser-left": "node tests/cdp-check.mjs left http://127.0.0.1:5173/",
+    "browser-resize": "node tests/cdp-check.mjs resize http://127.0.0.1:5173/?demo=canon-r5.jpg",
+    "browser-features": "node tests/cdp-check.mjs features http://127.0.0.1:5173/?demo=canon-r5.jpg",
+    "browser-theme": "node tests/cdp-check.mjs theme http://127.0.0.1:5173/?demo=canon-r5.jpg",
+    "browser-shots": "node tests/cdp-check.mjs shots http://127.0.0.1:5173/?demo=canon-r5.jpg",
+    "browser-real": "node tests/cdp-check.mjs real http://127.0.0.1:5173/"
+  },
+  "keywords": [
+    "exif",
+    "watermark",
+    "offline",
+    "canvas"
+  ],
+  "license": "MIT"
+}

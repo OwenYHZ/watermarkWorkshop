@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>RUNNING</title>
+  <style>
+    body { background:#0b0e13; color:#e8edf7; font:12px/1.5 Consolas,monospace; padding:16px; }
+    .pass { color:#6ee7a8; }
+    .fail { color:#ff7b7b; }
+    #summary { font-size:15px; margin-bottom:12px; }
+  </style>
+</head>
+<body>
+  <h1 id="summary">RUNNING</h1>
+  <pre id="results"></pre>
+  <script src="../js/tags.js"></script>
+  <script src="../js/exif.js"></script>
+  <script src="../js/meta.js"></script>
+  <script src="../js/brands.js"></script>
+  <script src="../js/state.js"></script>
+  <script src="../js/layout.js"></script>
+  <script src="../js/render.js"></script>
+  <script src="../js/export.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var WM = window.WM;
+    var lines = [];
+    var pass = 0;
+    var fail = 0;
+    var t0 = performance.now();
+
+    function log(ok, name, detail) {
+      if (ok) pass++; else fail++;
+      lines.push((ok ? 'PASS ' : 'FAIL ') + name + (detail != null ? '  [' + detail + ']' : ''));
+    }
+    function eq(actual, expected, name) {
+      log(String(actual) === String(expected), name, 'actual=' + actual + ' expected=' + expected);
+    }
+    function nearly(actual, expected, eps, name) {
+      log(isFinite(actual) && Math.abs(actual - expected) <= eps, name, 'actual=' + actual + ' expected≈' + expected);
+    }
+    function flush() {
+      document.getElementById('results').textContent = lines.join('\n');
+    }
+    function summaryLine() {
+      var ms = Math.round(performance.now() - t0);
+      var text = (fail ? 'FAILED ' : 'PASSED ') + pass + ' passed, ' + fail + ' failed, ' + ms + 'ms';
+      document.getElementById('summary').textContent = text;
+      document.getElementById('summary').className = fail ? 'fail' : 'pass';
+      document.title = 'SELFTEST ' + text;
+      flush();
+    }
+
+    async function fetchFixture(name) {
+      var res = await fetch('../fixtures/' + encodeURIComponent(name));
+      if (!res.ok) throw new Error('fixture ' + name + ' HTTP ' + res.status);
+      return new Uint8Array(await res.arrayBuffer());
+    }
+
+    async function run() {
+      var canonBytes = await fetchFixture('canon-r5.jpg');
+      var canon = await WM.exif.parse(canonBytes, { name: 'canon-r5.jpg', type: 'image/jpeg' });
+      var canonReport = WM.meta.buildReport(canon);
+      var canonSummary = canonReport.summary;
+
+      eq(canon.format, 'jpeg', 'JPEG 格式识别');
+      eq(canon.dimensions.width + 'x' + canon.dimensions.height, '1200x800', 'JPEG 尺寸');
+      eq(canon.orientation, 6, 'EXIF Orientation=6');
+      eq(canonSummary.make, 'Canon', 'Make');
+      eq(canonSummary.model, 'EOS R5', 'Model（去掉品牌前缀）');
+      eq(canonSummary.apertureText, 'f/2.8', '光圈');
+      eq(canonSummary.shutterText, '1/250s', '快门');
+      eq(canonSummary.isoText, 'ISO 400', 'ISO');
+      eq(canonSummary.focalText, '50mm', '焦距');
+      eq(canonSummary.date && canonSummary.date.y, 2024, '拍摄年份');
+      eq(canonSummary.offset, '+08:00', '时区偏移');
+      nearly(canonSummary.latitude, 30.2701, 0.0002, 'GPS 纬度');
+      nearly(canonSummary.longitude, 120.1252, 0.0002, 'GPS 经度');
+      nearly(canonSummary.altitude, 40, 0.01, 'GPS 海拔');
+      eq(canon.thumbnail && canon.thumbnail.bytes.length > 1000, true, 'IFD1 缩略图');
+      eq(canon.xmp && /xmpmeta/.test(canon.xmp.xml), true, 'XMP 提取');
+      eq(canon.iptcRaw && canon.iptcRaw.length > 50, true, 'IPTC 提取');
+      eq(canon.iccRaw && canon.iccRaw.length > 1000, true, 'ICC 提取');
+      eq(canon.warnings.length, 0, 'JPEG 无解析警告');
+
+      var xmpGroup = canonReport.groups.find(function (g) { return g.id === 'xmp'; });
+      var iptcGroup = canonReport.groups.find(function (g) { return g.id === 'iptc'; });
+      var iccGroup = canonReport.groups.find(function (g) { return g.id === 'icc'; });
+      eq(!!xmpGroup, true, 'XMP 分组存在');
+      eq(!!iptcGroup, true, 'IPTC 分组存在');
+      eq(!!iccGroup, true, 'ICC 分组存在');
+      if (xmpGroup) eq(xmpGroup.rows.some(function (r) { return /dc:title/.test(r.name) && /Bund/.test(r.value); }), true, 'XMP 标题（DOM 解析）');
+      if (iptcGroup) eq(iptcGroup.rows.some(function (r) { return /外滩正午/.test(r.value); }), true, 'IPTC 中文解码');
+      if (iccGroup) eq(iccGroup.rows.some(function (r) { return /sRGB/.test(r.value); }), true, 'ICC 描述');
+
+      var broken = await WM.exif.parse(await fetchFixture('broken-exif.jpg'), { name: 'broken-exif.jpg' });
+      eq(broken.warnings.length > 0, true, '损坏 EXIF 产生警告（不抛异常）');
+
+      var pngBytes = await fetchFixture('nikon-z6.png');
+      var png = await WM.exif.parse(pngBytes, { name: 'nikon-z6.png', type: 'image/png' });
+      var pngReport = WM.meta.buildReport(png);
+      eq(png.format, 'png', 'PNG 格式识别');
+      eq(png.dimensions.width + 'x' + png.dimensions.height, '800x600', 'PNG 尺寸');
+      eq(png.png.text.length >= 5, true, 'PNG 文本块数量 ' + png.png.text.length);
+      eq(png.exif && png.exif.ifd0.map[0x010f].value, 'NIKON CORPORATION', 'PNG eXIf Make');
+      eq(pngReport.summary.model, 'Z 6_2', 'PNG 型号清洗');
+      var ztxt = png.png.text.find(function (t) { return t.type === 'zTXt'; });
+      eq(ztxt && /压缩 zTXt/.test(ztxt.text), true, 'zTXt 解压');
+      var itxt = png.png.text.find(function (t) { return /Author/.test(t.keyword || ''); });
+      eq(itxt && /尼康样张/.test(itxt.text), true, 'iTXt 解码');
+
+      var detections = [
+        ['Canon', 'Canon EOS R5', 'canon'],
+        ['NIKON CORPORATION', 'NIKON Z 6_2', 'nikon'],
+        ['SONY', 'ILCE-7M4', 'sony'],
+        ['Apple', 'iPhone 15 Pro', 'apple'],
+        ['samsung', 'SM-S9180', 'samsung'],
+        ['Xiaomi', 'Redmi Note 12', 'xiaomi'],
+        ['Google', 'Pixel 8 Pro', 'google'],
+        ['DJI', 'Mavic 3', 'dji'],
+        ['FUJIFILM', 'X-T5', 'fujifilm'],
+        ['Panasonic', 'DC-S5M2', 'panasonic']
+      ];
+      detections.forEach(function (row) {
+        var b = WM.brands.detect(row[0], row[1]);
+        eq(b && b.id, row[2], '品牌识别 ' + row[0] + ' ' + row[1]);
+      });
+
+      var settings = WM.state.sanitize(WM.state.DEFAULTS);
+      function dummyPhoto(w, h) {
+        var c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        var ctx = c.getContext('2d');
+        var grad = ctx.createLinearGradient(0, 0, w, h);
+        grad.addColorStop(0, '#1b2436');
+        grad.addColorStop(1, '#5b7aa8');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, w, h);
+        return c;
+      }
+      var templates = ['param-panel', 'polaroid', 'bottom-bar', 'film-frame', 'dv-cam', 'tile-copyright'];
+      var outputs = {};
+      for (var i = 0; i < templates.length; i++) {
+        var template = templates[i];
+        settings.template = template;
+        var scene = WM.layout.compose({
+          imageW: 1200,
+          imageH: 800,
+          meta: canonSummary,
+          settings: settings,
+          brandName: 'Canon',
+          logoAspect: 3,
+          logoEnabled: true,
+          luminance: 0.35,
+          formatDate: function (d) { return WM.meta.formatDate(d, 'datetime', {}); },
+          measureText: WM.render.measureText
+        });
+        var finite = scene.ops.every(function (op) {
+          return ['x', 'y', 'w', 'h', 'size', 'radius', 'x1', 'y1', 'x2', 'y2'].every(function (k) {
+            return op[k] === undefined || isFinite(op[k]);
+          });
+        });
+        log(scene.ops.length > 0 && scene.output.w > 0 && scene.output.h > 0 && finite, '布局 ' + template,
+          'ops=' + scene.ops.length + ' out=' + scene.output.w + 'x' + scene.output.h);
+        var canvas = document.createElement('canvas');
+        var logo = WM.brands.toCanvas('canon', { height: 120, variant: scene.logoVariant });
+        WM.render.draw(canvas, scene, { photo: dummyPhoto(scene.imageRect.w, scene.imageRect.h), logo: logo && logo.canvas });
+        outputs[template] = { scene: scene, canvas: canvas };
+        eq(canvas.width, scene.output.w, '画布宽度 ' + template);
+      }
+
+      // 新版：日期/时间独立、品牌去重、字重隔离、底部白边 logo、胶片物理比例、DV 取景框
+      var fmtDate = function (d) { return WM.meta.formatDateStyle(d, 'iso', {}); };
+      var fmtTime = function (d) { return WM.meta.formatTimeStyle(d, '24hms', {}); };
+      function composeWith(opts) {
+        return WM.layout.compose({
+          imageW: 1200, imageH: 800, meta: canonSummary, settings: opts.settings,
+          brandName: 'Canon', logoAspect: 3, logoEnabled: opts.logoEnabled !== false,
+          luminance: 0.35,
+          formatDateOnly: function (d) {
+            return WM.meta.formatDateStyle(d, opts.settings.content.dateStyle, { weekday: opts.settings.content.showWeekday });
+          },
+          formatTimeOnly: function (d) {
+            return WM.meta.formatTimeStyle(d, opts.settings.content.timeStyle, { offset: opts.settings.content.showOffset });
+          },
+          measureText: WM.render.measureText
+        });
+      }
+      var ds = WM.state.sanitize(WM.state.DEFAULTS);
+      ds.template = 'param-panel';
+      ds.fields.location = false;
+      ds.fields.date = false;
+      ds.fields.time = true;
+      ds.content.timeStyle = '24hm';
+      var timeOnly = composeWith({ settings: ds });
+      var timeTexts = timeOnly.ops.filter(function (op) { return op.kind === 'text'; }).map(function (op) { return op.text; });
+      log(timeTexts.indexOf('12:34') >= 0, '只显示时间且格式生效');
+      log(!timeTexts.some(function (t) { return t.indexOf('2024-05-01') >= 0; }), '关闭日期后不出现日期');
+
+      var brandMeta = Object.assign({}, canonSummary, { model: 'Canon EOS R5', modelFull: 'Canon EOS R5' });
+      var brandSettings = WM.state.sanitize(WM.state.DEFAULTS);
+      brandSettings.template = 'param-panel';
+      var brandScene = WM.layout.compose({
+        imageW: 1200, imageH: 800, meta: brandMeta, settings: brandSettings,
+        brandName: 'Canon', logoAspect: 3, logoEnabled: true, luminance: 0.35,
+        formatDateOnly: fmtDate, formatTimeOnly: fmtTime
+      });
+      var brandTexts = brandScene.ops.filter(function (op) { return op.kind === 'text'; }).map(function (op) { return op.text; });
+      log(brandTexts.indexOf('Canon') < 0 && brandTexts.indexOf('EOS R5') >= 0, '品牌 logo 替换品牌文字');
+
+      var polaroidSettings = WM.state.sanitize(WM.state.DEFAULTS);
+      polaroidSettings.template = 'polaroid';
+      polaroidSettings.text.weight = 300;
+      var polaroidLight = composeWith({ settings: polaroidSettings });
+      polaroidSettings.text.weight = 800;
+      var polaroidHeavy = composeWith({ settings: polaroidSettings });
+      eq(polaroidLight.output.w + 'x' + polaroidLight.output.h,
+        polaroidHeavy.output.w + 'x' + polaroidHeavy.output.h, '拍立得字重不改变画布');
+      var lightPrimary = polaroidLight.ops.filter(function (op) { return op.kind === 'text'; })[0];
+      var heavyPrimary = polaroidHeavy.ops.filter(function (op) { return op.kind === 'text'; })[0];
+      log(lightPrimary.weight === 300 && heavyPrimary.weight === 800, '拍立得主行字重生效');
+
+      var barSettings = WM.state.sanitize(WM.state.DEFAULTS);
+      barSettings.template = 'bottom-bar';
+      var barWithLogo = composeWith({ settings: barSettings });
+      var barNoLogo = composeWith({ settings: barSettings, logoEnabled: false });
+      log(barWithLogo.ops.some(function (op) { return op.kind === 'line'; }), '有 logo 时底部白边有短竖线');
+      log(!barNoLogo.ops.some(function (op) { return op.kind === 'line'; }), '无 logo 时底部白边无竖线');
+
+      var filmSettings = WM.state.sanitize(WM.state.DEFAULTS);
+      filmSettings.template = 'film-frame';
+      var filmScene = composeWith({ settings: filmSettings });
+      nearly(filmScene.output.h, 800 * 35 / 24, 2, '胶片片宽比例');
+      eq(filmScene.background.color, '#0B0B0B', '胶片黑色片基');
+      var filmHoles = filmScene.ops.filter(function (op) { return op.kind === 'rect' && op.fill === '#F4F1E8'; });
+      log(filmHoles.length >= 8, '胶片白色齿孔排布');
+      log(filmHoles.length && filmHoles.every(function (op) { return op.w < op.h; }), '横向胶片孔为竖向长孔');
+      var filmTexts = filmScene.ops.filter(function (op) { return op.kind === 'text'; });
+      var stockText = filmTexts.filter(function (op) { return op.text === 'PORTRA 400'; })[0];
+      var printText = filmTexts.filter(function (op) { return op.text === 'P'; })[0];
+      log(!!stockText && !!printText && stockText.shadowBlur === 0 && printText.shadowBlur > 0,
+        '胶片原有边字清晰、Pentax 打印带光晕');
+      var pentaxItems = ['P', '±0.0', '400', '250', 'F2.8'];
+      log(pentaxItems.every(function (t) { return !!filmTexts.filter(function (op) { return op.text === t; })[0]; }),
+        'Pentax 孔间打印档位/曝光补偿/ISO/快门/光圈');
+      log(filmTexts.filter(function (op) { return op.text === 'PORTRA 400'; }).length === 1, '胶卷型号只出现一次');
+      log(!!filmTexts.filter(function (op) { return op.text === '12'; })[0] &&
+        !!filmTexts.filter(function (op) { return op.text === '12A'; })[0], '片号按间隔出现 12/12A');
+
+      filmSettings.film.printStyle = 'minolta';
+      var minoltaScene = composeWith({ settings: filmSettings });
+      var minoltaText = minoltaScene.ops.filter(function (op) { return op.kind === 'text' && op.rotation !== 0; })[0];
+      log(!!minoltaText && minoltaText.shadowBlur > 0, 'Minolta 右侧竖排参数');
+      filmSettings.film.printStyle = 'canon-date';
+      var canonScene = composeWith({ settings: filmSettings });
+      var canonText = canonScene.ops.filter(function (op) { return op.kind === 'text' && op.text.indexOf("'24") === 0; })[0];
+      log(!!canonText && canonText.shadowBlur > 0, 'Canon 右下日期');
+      filmSettings.film.printStyle = 'none';
+      var noPrintScene = composeWith({ settings: filmSettings });
+      log(!noPrintScene.ops.some(function (op) { return op.kind === 'text' && op.shadowBlur > 0; }),
+        '无打印模式不产生激光打印');
+
+      var dvSettings = WM.state.sanitize(WM.state.DEFAULTS);
+      dvSettings.template = 'dv-cam';
+      var dvScene = composeWith({ settings: dvSettings });
+      var dvRec = dvScene.ops.filter(function (op) { return op.kind === 'text' && op.text === 'REC'; })[0];
+      var dvDate = dvScene.ops.filter(function (op) { return op.kind === 'text' && op.text.indexOf('2024-05-01') === 0; })[0];
+      log(!!dvRec && !!dvDate, 'DV REC 与日期');
+      log(Math.abs((dvRec.y - dvRec.size / 2) - (800 - (dvDate.y + dvDate.size / 2))) < 2, 'DV 上下边距对称');
+      log(dvScene.ops.filter(function (op) { return op.kind === 'line'; }).length >= 6, 'DV 曝光标尺');
+      log(dvScene.ops.filter(function (op) { return op.kind === 'path'; }).length === 4, 'DV 取景框为四条折线');
+      log(dvScene.ops.every(function (op) {
+        var color = op.color || (op.stroke && op.stroke.color) || '';
+        var m = String(color).match(/rgba\([^)]*,\s*([0-9.]+)\s*\)$/);
+        return !m || Number(m[1]) === 1;
+      }), 'DV OSD 满透明度为 100%');
+      log(dvScene.ops.some(function (op) { return op.kind === 'text' && op.text === '4K'; }), 'DV 分辨率');
+      log(dvScene.ops.some(function (op) { return op.kind === 'rect' && op.fill === null && op.w < 300; }), 'DV 中心对焦框');
+
+      // 用一张真实照片渲染预览并导出
+      var bitmap = await createImageBitmap(new Blob([canonBytes], { type: 'image/jpeg' }), { imageOrientation: 'none' });
+      var rawDims = { width: 1200, height: 800 };
+      var display = WM.render.displaySize(bitmap, canon.orientation, rawDims.width, rawDims.height);
+      eq(display.width + 'x' + display.height, '800x1200', '方向 6 显示尺寸');
+      var photo = WM.render.normalizePhoto(bitmap, canon.orientation, rawDims.width, rawDims.height, 800, 1200);
+      eq(photo.width + 'x' + photo.height, '800x1200', '方向 6 旋转后尺寸');
+      settings.template = 'param-panel';
+      var scene2 = WM.layout.compose({
+        imageW: photo.width, imageH: photo.height, meta: canonSummary, settings: settings,
+        brandName: 'Canon', logoAspect: 3, logoEnabled: true, luminance: 0.3,
+        formatDate: function (d) { return WM.meta.formatDate(d, 'datetime', {}); },
+        measureText: WM.render.measureText
+      });
+      var canvas2 = document.createElement('canvas');
+      var logo2 = WM.brands.toCanvas('canon', { height: 140, variant: scene2.logoVariant });
+      WM.render.draw(canvas2, scene2, { photo: photo, logo: logo2 && logo2.canvas });
+
+      var jpegResult = await WM.export.encodeWithMetadata({
+        canvas: canvas2, format: 'jpeg', quality: 0.9, keepMetadata: true,
+        parsed: canon, width: canvas2.width, height: canvas2.height
+      });
+      var outParsed = await WM.exif.parse(new Uint8Array(await jpegResult.blob.arrayBuffer()), { name: 'out.jpg' });
+      eq(outParsed.format, 'jpeg', '导出 JPEG 可解析');
+      eq(outParsed.orientation, 1, '导出后 Orientation=1');
+      eq(outParsed.exif && outParsed.exif.ifd0.map[0x010f].value, 'Canon', '导出后保留 Make');
+      eq(outParsed.exif && outParsed.exif.exif.map[0xa002].value, canvas2.width, '导出后 PixelXDimension 更新');
+      eq(outParsed.exif && outParsed.exif.exif.map[0xa003].value, canvas2.height, '导出后 PixelYDimension 更新');
+      eq(outParsed.dimensions.width, canvas2.width, '导出尺寸正确');
+      eq(outParsed.xmpParts.length > 0, true, '导出保留 XMP');
+      eq(outParsed.iptcRaw && outParsed.iptcRaw.length > 0, true, '导出保留 IPTC');
+
+      // PNG 导出：用一张干净 PNG 作为目标，检查文本块与 eXIf 保留
+      var cleanPng = await fetchFixture('minimal.png');
+      var cleanCanvas = document.createElement('canvas');
+      cleanCanvas.width = 320;
+      cleanCanvas.height = 240;
+      cleanCanvas.getContext('2d').fillRect(0, 0, 320, 240);
+      var pngResult = await WM.export.encodeWithMetadata({
+        canvas: cleanCanvas, format: 'png', keepMetadata: true,
+        parsed: png, sourceBytes: pngBytes, width: 320, height: 240
+      });
+      var pngOut = await WM.exif.parse(new Uint8Array(await pngResult.blob.arrayBuffer()), { name: 'out.png' });
+      eq(pngOut.png.text.length >= 5, true, 'PNG 导出保留文本块');
+      eq(!!pngOut.exif, true, 'PNG 导出保留 eXIf');
+      eq(pngOut.orientation, 1, 'PNG 导出 Orientation=1');
+
+      var zipBlob = await WM.export.zip([
+        { name: 'a.jpg', blob: new Blob([new Uint8Array([1, 2, 3])]) },
+        { name: '中文.txt', blob: new Blob([new TextEncoder().encode('hello')]) }
+      ]);
+      var zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+      eq(zipBytes[0] === 0x50 && zipBytes[1] === 0x4b && zipBytes[2] === 0x03 && zipBytes[3] === 0x04, true, 'ZIP 头');
+      var eocd = zipBytes.length - 22;
+      eq((zipBytes[eocd] | (zipBytes[eocd + 1] << 8)) , 0x4b50, 'ZIP EOCD 签名');
+      eq((zipBytes[eocd + 10] | (zipBytes[eocd + 11] << 8)), 2, 'ZIP 条目数');
+
+      var dims1 = WM.export.targetDimensions(6000, 4000, { resize: 'longEdge', longEdge: 2560 });
+      eq(dims1.width + 'x' + dims1.height, '2560x1707', '长边缩放');
+      var dims2 = WM.export.targetDimensions(1000, 800, { resize: 'percent', percent: 50 });
+      eq(dims2.width + 'x' + dims2.height, '500x400', '百分比缩放');
+      var dims3 = WM.export.targetDimensions(20000, 10000, { resize: 'original' });
+      eq(dims3.limited, true, '超大图限制');
+      eq(WM.export.buildFilename('{name}_{brand}_{seq}', { name: 'IMG 01', brand: 'Canon', seq: '02' }, 'jpg'), 'IMG 01_Canon_02.jpg', '文件名模板');
+
+      // 自定义 logo 的水印绘制
+      var logoCanvas = document.createElement('canvas');
+      logoCanvas.width = 120;
+      logoCanvas.height = 40;
+      var lctx = logoCanvas.getContext('2d');
+      lctx.fillStyle = '#FF3333';
+      lctx.fillRect(0, 0, 120, 40);
+      lctx.fillStyle = '#fff';
+      lctx.font = '20px sans-serif';
+      lctx.fillText('MY LOGO', 4, 27);
+      var scene3 = WM.layout.compose({
+        imageW: 1200, imageH: 800, meta: canonSummary, settings: settings,
+        brandName: 'Canon', logoAspect: 3, logoEnabled: true, luminance: 0.5,
+        formatDate: function (d) { return WM.meta.formatDate(d, 'datetime', {}); },
+        measureText: WM.render.measureText
+      });
+      var canvas3 = document.createElement('canvas');
+      WM.render.draw(canvas3, scene3, { photo: dummyPhoto(scene3.imageRect.w, scene3.imageRect.h), logo: logoCanvas });
+      eq(canvas3.width, scene3.output.w, '自定义 logo 绘制不报错');
+
+      // 预览/导出比例一致性（同一布局在 800 与 4000 宽时文本块相对位置一致）
+      settings.template = 'param-panel';
+      var small = WM.layout.compose({ imageW: 800, imageH: 600, meta: canonSummary, settings: settings, brandName: 'Canon', logoAspect: 3, logoEnabled: true, measureText: WM.render.measureText });
+      var large = WM.layout.compose({ imageW: 4000, imageH: 3000, meta: canonSummary, settings: settings, brandName: 'Canon', logoAspect: 3, logoEnabled: true, measureText: WM.render.measureText });
+      var smallText = small.ops.find(function (o) { return o.kind === 'text'; });
+      var largeText = large.ops.find(function (o) { return o.kind === 'text'; });
+      nearly(smallText.x / small.output.w, largeText.x / large.output.w, 0.01, '预览与导出相对位置一致');
+      nearly(smallText.size / small.output.w, largeText.size / large.output.w, 0.001, '预览与导出字号比例一致');
+
+      // 自定义 logo 存储（IndexedDB，失败时回退内存）
+      var logoSrc = document.createElement('canvas');
+      logoSrc.width = 80;
+      logoSrc.height = 32;
+      var lctx = logoSrc.getContext('2d');
+      lctx.fillStyle = '#FF3366';
+      lctx.fillRect(0, 0, 80, 32);
+      lctx.fillStyle = '#fff';
+      lctx.font = '16px sans-serif';
+      lctx.fillText('LOGO', 6, 22);
+      try {
+        var savedLogo = await WM.state.saveLogo({
+          name: 'selftest-logo',
+          dataUrl: logoSrc.toDataURL('image/png'),
+          width: 80,
+          height: 32
+        });
+        var logoList = await WM.state.listLogos();
+        eq(logoList.some(function (l) { return l.id === savedLogo.id; }), true, '自定义 logo 存取');
+        await WM.state.deleteLogo(savedLogo.id);
+        var logoList2 = await WM.state.listLogos();
+        eq(logoList2.some(function (l) { return l.id === savedLogo.id; }), false, '自定义 logo 删除');
+      } catch (e) {
+        log(false, '自定义 logo 存取', e.message);
+      }
+
+      // 预设存取
+      try {
+        var preset = WM.state.savePreset('selftest-preset', WM.state.DEFAULTS);
+        eq(WM.state.listPresets().some(function (p) { return p.id === preset.id; }), true, '预设保存');
+        WM.state.deletePreset(preset.id);
+        eq(WM.state.listPresets().some(function (p) { return p.id === preset.id; }), false, '预设删除');
+      } catch (e) {
+        log(false, '预设存取', e.message);
+      }
+
+      // 浏览器内 ZIP 打包
+      var browserZip = await WM.export.zip([
+        { name: 'a.jpg', blob: new Blob([new Uint8Array([1, 2, 3])]) },
+        { name: '中文.txt', blob: new Blob([new TextEncoder().encode('hello')]) }
+      ]);
+      var zbytes = new Uint8Array(await browserZip.arrayBuffer());
+      eq(zbytes[0] === 0x50 && zbytes[1] === 0x4b, true, '浏览器 ZIP 生成');
+      var eocdPos = zbytes.length - 22;
+      eq(zbytes[eocdPos] | (zbytes[eocdPos + 1] << 8), 0x4b50, 'ZIP EOCD 签名');
+      eq(zbytes[eocdPos + 10] | (zbytes[eocdPos + 11] << 8), 2, 'ZIP 条目数');
+
+      // XMP 容器元素（ISO 等）在浏览器的 DOM 解析路径
+      var isoXml = '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">' +
+        '<rdf:Description rdf:about="" xmlns:tiff="http://ns.adobe.com/tiff/1.0/" xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:exifEX="http://cipa.jp/exif/1.0/" tiff:Make="Canon" tiff:Model="Canon EOS 200D II" exifEX:LensModel="EF-S18-55mm f/4-5.6 IS STM" exif:FNumber="71/10" exif:ExposureTime="1/200" exif:FocalLength="55/1">' +
+        '<exif:ISOSpeedRatings><rdf:Seq><rdf:li>800</rdf:li></rdf:Seq></exif:ISOSpeedRatings></rdf:Description></rdf:RDF></x:xmpmeta>';
+      var isoXmp = WM.meta.parseXmp(isoXml);
+      var isoMap = WM.meta.xmpToMap(isoXmp.props);
+      eq(isoMap['exif:ISOSpeedRatings'], '800', 'XMP 容器 ISO 解析');
+      var isoStub = { format: 'png', dimensions: { width: 1000, height: 800 }, orientation: 1, file: { name: 'x.png', size: 1 }, exif: null, warnings: [] };
+      var isoSummary = WM.meta.buildSummary(isoStub);
+      WM.meta.applyXmpSummary(isoSummary, isoMap, isoStub);
+      eq(isoSummary.isoText, 'ISO 800', 'XMP ISO 进入摘要');
+      eq(isoSummary.apertureText, 'f/7.1', 'XMP 光圈进入摘要');
+      eq(isoSummary.model, 'EOS 200D II', 'XMP 型号进入摘要');
+
+      // EXIF 可见性：默认精简，常用字段保留、无用字段归入「显示全部」
+      eq(typeof WM.meta.rowVisibility, 'function', 'rowVisibility 已导出');
+      var canonReport2 = WM.meta.buildReport(canon);
+      var visTotal = 0;
+      var visCore = 0;
+      var visExtra = [];
+      canonReport2.groups.forEach(function (g) {
+        g.rows.forEach(function (r) {
+          visTotal += 1;
+          if (WM.meta.rowVisibility(g.id, r) === 'core') visCore += 1;
+          else visExtra.push(r.name);
+        });
+      });
+      log(visCore > 0 && visCore <= visTotal * 0.55, 'EXIF 默认只显示常用字段（' + visCore + '/' + visTotal + '）');
+      log(visExtra.indexOf('SubjectDistance') >= 0 && visExtra.indexOf('ImageUniqueID') >= 0 &&
+        visExtra.indexOf('内嵌缩略图') >= 0, '被摄体距离 / ImageUniqueID / 缩略图默认隐藏');
+      eq(WM.meta.rowVisibility('file', { name: '采样精度' }), 'core', '采样精度保留');
+      eq(WM.meta.rowVisibility('exposure', { name: 'SubjectDistanceRange' }), 'extra', '被摄体距离范围默认隐藏');
+      eq(WM.meta.rowVisibility('camera', { name: '任何字段' }), 'core', '相机组整组保留');
+
+      // 分组折叠决策：0 个常用字段整组隐藏；有常用字段默认展开
+      var emptyGroup = WM.meta.groupVisibility('image', [{ name: 'XResolution' }, { name: 'YResolution' }]);
+      eq(emptyGroup.hiddenWhenScoped, true, '0/n 组整组隐藏');
+      eq(emptyGroup.openWhenScoped, false, '0/n 组不需要展开');
+      var oneCoreGroup = WM.meta.groupVisibility('image', [{ name: 'ImageDescription' }, { name: 'XResolution' }]);
+      eq(oneCoreGroup.openWhenScoped, true, '1/n 组默认展开');
+      eq(WM.meta.groupVisibility('warn', [{ name: 'w' }]).hiddenWhenScoped, false, '警告组永不隐藏');
+
+      summaryLine();
+    }
+
+    run().catch(function (e) {
+      fail++;
+      lines.push('FAIL 未捕获异常：' + (e && e.stack ? e.stack : e));
+      summaryLine();
+    });
+  })();
+  </script>
+</body>
+</html>

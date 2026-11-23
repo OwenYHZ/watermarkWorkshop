@@ -1,0 +1,16 @@
+# 本地测试/浏览器临时文件
+.chrome-*/
+.edge-*/
+.tmp-*/
+tmp-*
+selftest-dom.html
+app-dom.html
+shot-demo.png
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# 用户提供的真实样张（体积较大，测试存在时自动运行）
+testTruePhoto/
