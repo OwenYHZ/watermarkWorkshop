@@ -14,6 +14,7 @@
   var PRESET_KEY = 'wm.presets.v1';
   var THEME_KEY = 'wm.theme.v1';
   var EXIF_VIEW_KEY = 'wm.exif.v1';
+  var EXPORT_DEFAULTS_KEY = 'wm.export.defaults.v1';
   var THEME_MODES = ['dark', 'light', 'system'];
 
   var DEFAULTS = {
@@ -147,8 +148,8 @@
       textSize: 20
     },
     output: {
-      format: 'jpeg',
-      quality: 0.92,
+      format: 'original',
+      quality: 1,
       resize: 'original',
       longEdge: 2560,
       percent: 100,
@@ -394,7 +395,7 @@
     var migrated = { 'corner-badge': 'param-panel', 'film-bar': 'param-panel', 'frame-line': 'dv-cam' };
     if (migrated[s.template]) s.template = migrated[s.template];
     if (s.template !== '' && templateIds.indexOf(s.template) < 0) s.template = DEFAULTS.template;
-    if (['jpeg', 'png', 'webp'].indexOf(s.output.format) < 0) s.output.format = 'jpeg';
+    if (['original', 'jpeg', 'png', 'webp'].indexOf(s.output.format) < 0) s.output.format = 'original';
     if (['original', 'longEdge', 'percent'].indexOf(s.output.resize) < 0) s.output.resize = 'original';
     if (['none', 'solid', 'glass', 'gradient'].indexOf(s.panel.style) < 0) s.panel.style = 'glass';
     if (['brand', 'custom', 'none'].indexOf(s.logo.source) < 0) s.logo.source = 'brand';
@@ -500,7 +501,17 @@
 
   function loadSettings() {
     var raw = storageGet(STORAGE_KEY, null);
-    return sanitize(raw || {});
+    var settings = sanitize(raw || {});
+    // 一次性迁移：默认改为「原格式 + 100% 尺寸 + 100% 质量」。
+    // 只做一次，之后用户自己改的设置不会被覆盖。
+    if (storageGet(EXPORT_DEFAULTS_KEY, false) !== true) {
+      settings.output.format = 'original';
+      settings.output.quality = 1;
+      settings.output.resize = 'original';
+      storageSet(EXPORT_DEFAULTS_KEY, true);
+      storageSet(STORAGE_KEY, settings);
+    }
+    return settings;
   }
 
   var saveTimer = null;

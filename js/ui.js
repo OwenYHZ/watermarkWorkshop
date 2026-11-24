@@ -1376,6 +1376,7 @@
       id: 'output', title: '导出设置', open: true, mount: 'export-modal',
       controls: [
         { type: 'seg', label: '输出格式', path: 'output.format', options: [
+          { value: 'original', label: '原格式' },
           { value: 'jpeg', label: 'JPEG' }, { value: 'png', label: 'PNG' }, { value: 'webp', label: 'WebP' }
         ] },
         { type: 'range', label: 'JPEG / WebP 质量', path: 'output.quality', min: 0.3, max: 1, step: 0.01, percent: true,
@@ -2001,6 +2002,23 @@
         $id('modal-body').textContent = '';
       },
       actions: [
+        {
+          label: '导出当前照片',
+          primary: true,
+          onClick: function () {
+            closeModal();
+            window.setTimeout(function () { exportActive(); }, 80);
+            return false;
+          }
+        },
+        {
+          label: '全部导出',
+          onClick: function () {
+            closeModal();
+            window.setTimeout(function () { exportAll(); }, 80);
+            return false;
+          }
+        },
         { label: '导出预设 JSON', onClick: function () { exportPresets(); return false; } },
         {
           label: '恢复默认参数',
@@ -2302,6 +2320,8 @@
   }
 
   async function exportFile(file, seq) {
+    var outFormat = settings.output.format;
+    if (outFormat === 'original') outFormat = file.parsed.format === 'png' ? 'png' : 'jpeg';
     var summary = file.report.summary;
     var brand = currentBrand(summary);
     var enabled = logoEnabled(summary);
@@ -2331,16 +2351,16 @@
     var canvas = document.createElement('canvas');
     render.draw(canvas, scene, { photo: photo, logo: logoAsset });
     var finalCanvas = canvas;
-    if (settings.output.format === 'jpeg') {
+    if (outFormat === 'jpeg') {
       finalCanvas = flattenCanvas(canvas, settings.output.flattenColor);
     }
     var sourceBytes = null;
-    if (settings.output.format === 'png' && file.parsed.format === 'png') {
+    if (outFormat === 'png' && file.parsed.format === 'png') {
       sourceBytes = file.bytes || new Uint8Array(await file.blob.arrayBuffer());
     }
     var result = await exporter.encodeWithMetadata({
       canvas: finalCanvas,
-      format: settings.output.format,
+      format: outFormat,
       quality: settings.output.quality,
       keepMetadata: settings.output.keepMetadata,
       parsed: file.parsed,
@@ -2349,7 +2369,7 @@
       height: finalCanvas.height
     });
     var tokens = exportTokens(file, seq || 1);
-    var filename = exporter.buildFilename(settings.output.filenamePattern, tokens, exporter.extFor(settings.output.format));
+    var filename = exporter.buildFilename(settings.output.filenamePattern, tokens, exporter.extFor(outFormat));
     var warnings = result.warnings || [];
     if (target.limited) warnings.push(target.note);
     try {
@@ -2454,7 +2474,12 @@
 
   function updateExportSummary() {
     var file = activeFile();
-    var formatLabel = settings.output.format === 'jpeg' ? 'JPEG' : settings.output.format === 'png' ? 'PNG' : 'WebP';
+    var resolvedFormat = settings.output.format === 'original'
+      ? (file && file.parsed.format === 'png' ? 'png' : 'jpeg')
+      : settings.output.format;
+    var formatLabel = settings.output.format === 'original'
+      ? '原格式'
+      : settings.output.format === 'jpeg' ? 'JPEG' : settings.output.format === 'png' ? 'PNG' : 'WebP';
     var parts = [formatLabel];
     if (file) {
       var target = exporter.targetDimensions(file.fullW, file.fullH, settings.output);
@@ -2463,7 +2488,7 @@
     } else {
       parts.push('原图尺寸');
     }
-    if (settings.output.format !== 'png') parts.push('质量 ' + Math.round(settings.output.quality * 100) + '%');
+    if (resolvedFormat !== 'png') parts.push('质量 ' + Math.round(settings.output.quality * 100) + '%');
     if (!settings.output.keepMetadata) parts.push('不保留元数据');
     var summary = parts.join(' · ');
     var fmtNode = $id('export-format');
@@ -2480,7 +2505,7 @@
   function updateExportButtons() {
     var has = !!activeFile();
     $id('btn-export').disabled = !has || app.exporting;
-    $id('btn-export-all').disabled = !app.files.length || app.exporting;
+    $id('btn-import').disabled = app.exporting;
     $id('btn-compare').disabled = !has;
     updateExifActions();
   }
@@ -2804,8 +2829,8 @@
         ro.observe(stageWatch);
       }
     }
+    $id('btn-import').addEventListener('click', openFilePicker);
     $id('btn-export').addEventListener('click', exportActive);
-    $id('btn-export-all').addEventListener('click', exportAll);
     var exportSettingsBtn = $id('btn-export-settings');
     if (exportSettingsBtn) exportSettingsBtn.addEventListener('click', openExportSettings);
     var exifScopeBtn = $id('btn-exif-all');

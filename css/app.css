@@ -489,7 +489,8 @@ body.resizing * { cursor: col-resize !important; }
   flex: 0 0 auto;
   height: var(--dock-base);
   width: auto;
-  max-width: 190px;
+  /* 宽高比 ≤ 3:1 的照片原样展示；超过 3:1 才在卡片里留上下黑边 */
+  max-width: calc(var(--dock-base) * 3);
   object-fit: contain;
   border-radius: 7px;
 }

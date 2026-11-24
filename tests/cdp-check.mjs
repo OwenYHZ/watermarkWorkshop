@@ -1171,7 +1171,11 @@ async function main() {
         hasFormatControl: !!document.querySelector('#modal-body .ctrl-row[data-path="output.format"]'),
         hasQualityControl: !!document.querySelector('#modal-body .ctrl-row[data-path="output.quality"]'),
         inModalBody: document.querySelectorAll('#modal-body #export-modal-body').length,
-        title: (document.getElementById('modal-title') || {}).textContent || ''
+        title: (document.getElementById('modal-title') || {}).textContent || '',
+        actions: Array.from(document.querySelectorAll('#modal-actions .btn'))
+          .map((b) => (b.textContent || '').trim()),
+        dock: Array.from(document.querySelectorAll('.dock-gallery .dock-actions .btn'))
+          .map((b) => b.id)
       };
       document.getElementById('modal-close').click();
       await sleep(250);
@@ -1400,6 +1404,9 @@ async function main() {
       result.exportModal && result.exportModal.open && /blur/i.test(result.exportModal.blur) &&
       result.exportModal.hasFormatControl && result.exportModal.hasQualityControl &&
       result.exportModal.inModalBody === 1 && result.exportModal.closedHidden &&
+      result.exportModal.actions.indexOf('导出当前照片') >= 0 &&
+      result.exportModal.actions.indexOf('全部导出') >= 0 &&
+      result.exportModal.dock.join(',') === 'btn-import,btn-export,btn-export-settings' &&
       result.exportModal.backInHost &&
       result.presetBar && result.presetBar.exists &&
       result.presetBar.buttons.join(',') === 'btn-preset-save,btn-preset-use' &&
@@ -1921,6 +1928,56 @@ async function main() {
       !result.banner;
     stopChrome();
     process.exit(healthy ? 0 : 1);
+  } else if (mode === 'thumbs') {
+    const expression = `(async () => {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const make = (w, h, name) => new Promise((ok) => {
+        const c = document.createElement('canvas');
+        c.width = w;
+        c.height = h;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#8aa6a0';
+        ctx.fillRect(0, 0, w, h);
+        c.toBlob((b) => ok(new File([b], name, { type: 'image/png' })), 'image/png');
+      });
+      const list = [await make(250, 100, 'r2.5.png'), await make(600, 100, 'r6.png')];
+      try {
+        const r = await fetch('testTruePhoto/0.75@0.75x.png');
+        if (r.ok) {
+          const b = await r.blob();
+          list.push(new File([b], 'wide-real.png', { type: 'image/png' }));
+        }
+      } catch (e) { /* 本地样张可选 */ }
+      await WM.ui.addFiles(list);
+      await sleep(1800);
+      const cards = Array.from(document.querySelectorAll('#bottom-gallery .file-card'));
+      return JSON.stringify(cards.map((card) => {
+        const im = card.querySelector('img');
+        const r = im.getBoundingClientRect();
+        return {
+          name: card.dataset.name,
+          ratio: Number((r.width / r.height).toFixed(3)),
+          natural: im.naturalWidth && im.naturalHeight
+            ? Number((im.naturalWidth / im.naturalHeight).toFixed(3)) : 0,
+          w: Math.round(r.width),
+          h: Math.round(r.height)
+        };
+      }));
+    })()`;
+    const raw = await evaluate(expression);
+    const result = JSON.parse(raw);
+    console.log(JSON.stringify(result, null, 2));
+    if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));
+    const by = (name) => result.find((x) => x.name === name);
+    const r25 = by('r2.5.png');
+    const r6 = by('r6.png');
+    const real = by('wide-real.png');
+    const healthy = r25 && Math.abs(r25.ratio - 2.5) <= 0.06 &&
+      r6 && Math.abs(r6.ratio - 3) <= 0.06 && r6.w <= 290 &&
+      (!real || (Math.abs(real.ratio - 3) <= 0.06 && real.w <= 290)) &&
+      result.every((x) => Math.abs(x.h - 96) <= 1);
+    stopChrome();
+    process.exit(healthy ? 0 : 1);
   } else if (mode === 'export') {
     const expression = `(async () => {
       const f = WM.ui.state.files[0];
@@ -1931,7 +1988,22 @@ async function main() {
       for (let i = 0; i < bytes.length; i += step) {
         bin += String.fromCharCode.apply(null, bytes.subarray(i, i + step));
       }
-      return JSON.stringify({ filename: res.filename, warnings: res.warnings, type: res.blob.type, size: res.blob.size, data: btoa(bin) });
+      const defaults = {
+        format: WM.ui.settings.output.format,
+        quality: WM.ui.settings.output.quality,
+        resize: WM.ui.settings.output.resize
+      };
+      const pngInfo = await (async () => {
+        const r = await fetch('fixtures/nikon-z6.png');
+        const b = await r.blob();
+        await WM.ui.addFiles([new File([b], 'nikon-z6.png', { type: 'image/png' })]);
+        await new Promise((ok) => setTimeout(ok, 1400));
+        const f2 = WM.ui.state.files.find((x) => x.name === 'nikon-z6.png');
+        const res2 = await WM.ui._exportFile(f2, 2);
+        return { filename: res2.filename, type: res2.blob.type, size: res2.blob.size };
+      })();
+      return JSON.stringify({ filename: res.filename, warnings: res.warnings, type: res.blob.type,
+        size: res.blob.size, data: btoa(bin), defaults, png: pngInfo });
     })()`;
     const raw = await evaluate(expression);
     const result = JSON.parse(raw);
@@ -1944,7 +2016,12 @@ async function main() {
     console.log(JSON.stringify(result, null, 2));
     if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));
     stopChrome();
-    process.exit(result.size > 1000 ? 0 : 1);
+    const healthy = result.size > 1000 &&
+      result.defaults && result.defaults.format === 'original' &&
+      result.defaults.quality === 1 && result.defaults.resize === 'original' &&
+      result.png && result.png.type === 'image/png' &&
+      /\.png$/.test(result.png.filename) && result.png.size > 1000;
+    process.exit(healthy ? 0 : 1);
   } else {
     console.log(JSON.stringify(state, null, 2));
     if (exceptions.length) console.log('页面异常：\n' + exceptions.join('\n'));
