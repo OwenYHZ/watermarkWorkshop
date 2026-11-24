@@ -1071,6 +1071,19 @@ async function main() {
       };
       clickSeg('film.type', 'color-negative');
       await sleep(380);
+      const edgeOpInput = document.querySelector('#controls input[data-path="film.edgeOpacity"]');
+      result.film.edgeOpacityControl = !!edgeOpInput;
+      if (edgeOpInput) {
+        edgeOpInput.value = '0.5';
+        edgeOpInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
+        const edgeStock = WM.ui.state.lastScene.ops.find((op) =>
+          op.kind === 'text' && op.text === 'KODAK PORTRA 400');
+        result.film.edgeOpacityValue = edgeStock ? edgeStock.opacity : null;
+        edgeOpInput.value = '1';
+        edgeOpInput.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(300);
+      }
       result.film.labels = result.film.texts.filter((t) => t.text === '12' || t.text === '12A').map((t) => t.text);
       clickSeg('film.holeColor', 'black');
       await sleep(350);
@@ -1402,6 +1415,8 @@ async function main() {
       result.film && result.film.background === '#0B0B0B' && result.film.holes >= 8 &&
       result.film.holeShapeOk && result.film.stockCount >= 1 &&
       result.film.stockOptions.join(',') === 'KODAK PORTRA 400' &&
+      result.film.edgeOpacityControl === true &&
+      Math.abs(result.film.edgeOpacityValue - 0.5) <= 0.01 &&
       result.film.holeSeg === 2 &&
       result.film.bwStock && result.film.bwStock.value === 'hp5' &&
       result.film.bwStock.options.join(',') === 'ILFORD HP5 PLUS 400' &&

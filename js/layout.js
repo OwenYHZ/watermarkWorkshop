@@ -261,7 +261,8 @@
         stockId: film.stockId || (film.type === 'bw-negative' ? 'hp5' : 'portra400'),
         frameNo: film.frameNo || '12',
         textSize: num(film.textSize, 24),
-        textOpacity: num(film.textOpacity, 1)
+        textOpacity: num(film.textOpacity, 1),
+        edgeOpacity: film.edgeOpacity == null ? 1 : film.edgeOpacity
       },
       dv: {
         size: num(dv.size, 15),
@@ -1225,7 +1226,7 @@
     var edgeColor = style.color;
     var printColor = edgeColor;
     // 胶片原有边字固定字号/不透明度；打印字号与透明度只影响下面的打印内容。
-    var edgeOpacity = 1;
+    var edgeOpacity = s.film.edgeOpacity == null ? 1 : Math.max(0.05, Math.min(1, s.film.edgeOpacity));
     var printOpacity = s.film.textOpacity;
     var holeFill = s.film.holeColor === 'black' ? '#000000' : '#FCFCFC';
     var hairline = Math.max(1, mm * 0.03);
@@ -1245,14 +1246,15 @@
     var bottomHoleCenter = imgY + imgH + holeCenterFromImage;
     var holeRadius = Math.min(holeAlong, holeAcross) * 0.28;
 
+    var holeOps = [];
     for (var i = 0; i < n; i++) {
       var centerAlong = (i + 0.5) * step;
       var hx = centerAlong - holeAlong / 2;
-      ops.push({
+      holeOps.push({
         kind: 'rect', x: hx, y: topHoleCenter - holeAcross / 2, w: holeAlong, h: holeAcross,
         radius: holeRadius, fill: holeFill, stroke: holeStroke, shadow: false
       });
-      ops.push({
+      holeOps.push({
         kind: 'rect', x: hx, y: bottomHoleCenter - holeAcross / 2, w: holeAlong, h: holeAcross,
         radius: holeRadius, fill: holeFill, stroke: holeStroke, shadow: false
       });
@@ -1318,19 +1320,27 @@
 
     // 真实 Portra 条码：列与列紧贴（无缝隙），0 与 1/2/3 同宽；
     // 条码带从孔下缘一直贴到片边，满高 / 上半 / 下半三档。
-    function edgeBarcode(pattern, startX, top) {
+    function edgeBarcode(pattern, startX) {
       if (!pattern) return;
       var unit = (step * 2.66) / pattern.length;
-      var bandTop = top ? 0 : F - outerBand;
-      var bandH = outerBand;
+      var lowerTop = F - outerBand;              // 下齿孔下边沿
+      var upperTop = lowerTop - holeAcross * 0.7; // 上半截侵入齿孔区
+      var paint = edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity);
+      // 先铺一条 3333 的实心条，再用片基色遮出 0/1/2，保证列间绝无缝隙。
+      ops.push({
+        kind: 'rect', x: startX, y: upperTop, w: unit * pattern.length, h: F - upperTop,
+        radius: 0, fill: paint, stroke: null, shadow: false
+      });
       for (var idx = 0; idx < pattern.length; idx++) {
         var code = pattern.charAt(idx);
-        if (code === '0') continue;
-        var h = code === '3' ? bandH : code === '2' ? bandH * 0.59 : bandH * 0.41;
-        var y = code === '1' ? bandTop + bandH - h : bandTop;
+        if (code === '3') continue;
+        var my = upperTop;
+        var mh = F - upperTop;
+        if (code === '2') { my = lowerTop; mh = F - lowerTop; }
+        else if (code === '1') { my = upperTop; mh = lowerTop - upperTop; }
         ops.push({
-          kind: 'rect', x: startX + idx * unit, y: y, w: unit, h: h,
-          radius: 0, fill: edgeColor, stroke: null, shadow: false
+          kind: 'rect', x: startX + idx * unit, y: my, w: unit, h: mh,
+          radius: 0, fill: pal.base, stroke: null, shadow: false
         });
       }
     }
@@ -1354,7 +1364,7 @@
           [rightX - head, mid + lw / 2],
           [left, mid + lw / 2]
         ],
-        fill: edgeColor,
+        fill: edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity),
         color: null,
         width: 0,
         shadow: false
@@ -1411,7 +1421,7 @@
       edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.30, step * 0.95,
         'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 1);
       if (style.barcode1) {
-        edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.27, false);
+        edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.36, false);
       }
       var aHole = style.aHole;
       edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
@@ -1424,6 +1434,8 @@
         edgeArrow(base + holeCenter(aHole) + step * 0.28, F - Math.max(1, step * 0.05));
       }
     }
+
+    ops = ops.concat(holeOps);
 
     if (s.film.printStyle !== 'none') {
       if (s.film.printStyle === 'pentax') {

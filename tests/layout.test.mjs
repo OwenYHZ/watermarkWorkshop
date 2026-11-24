@@ -191,33 +191,37 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   assert.ok(Math.abs(arrowLen - stepPx0 * 0.77) <= stepPx0 * 0.12, '箭头总长 ≈0.77P');
   assert.ok(Math.max(...arrowXs) > hc(4), '箭头右端伸到 A 片号右侧');
 
-  const barcodes = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#F5A623');
-  assert.ok(barcodes.length >= 20, '两段真实条码存在');
-  const barHeights = new Set(barcodes.map((op) => Math.round(op.h)));
-  const barTops = new Set(barcodes.map((op) => Math.round(op.y)));
-  assert.ok(barHeights.size >= 3, '条码包含满高/上半/下半三种高度');
-  assert.ok(barTops.size >= 2, '半高条码分为上半/下半（起点不同）');
-  const barcode1 = barcodes.filter((op) => op.x < hc(4));
-  const barcode2 = barcodes.filter((op) => op.x >= hc(4));
-  assert.ok(barcode1.length && barcode2.length, '两段条码分别位于 A 片号两侧');
-  assert.ok(Math.min(...barcodes.map((op) => op.x)) >= hc(0), '条码从首孔右侧开始');
-  const b1 = barcodes.filter((op) => op.x < hc(4));
-  const b1w = Math.max(...b1.map((op) => op.x + op.w)) - Math.min(...b1.map((op) => op.x));
+  const blocks = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#F5A623');
+  assert.equal(blocks.length, 2, '两段条码各是一条实心底块');
   const stepPx = hc(1) - hc(0);
-  assert.ok(Math.abs(b1w - stepPx * 2.66) <= stepPx * 0.08, '条码组宽 ≈2.66P');
-  const barUnit = (stepPx * 2.66) / 31;
-  b1.forEach((op) => {
-    assert.ok(Math.abs(op.w - barUnit) <= 0.4, '每列条码填满列宽，0 与 1/2/3 等宽');
-    const offset = (op.x - Math.min(...b1.map((b) => b.x))) / barUnit;
-    assert.ok(Math.abs(offset - Math.round(offset)) <= 0.03, '条码列按等宽列排布');
+  blocks.forEach((op) => {
+    assert.ok(Math.abs(op.w - stepPx * 2.66) <= stepPx * 0.08, '条码组宽 ≈2.66P');
   });
+  const outerBandPx = horizontal.output.h - (bottom[0].y + bottom[0].h);
+  const expectedH = outerBandPx + top[0].h * 0.7;
+  assert.ok(blocks.every((op) => Math.abs(op.h - expectedH) <= 4), '条码上半截伸入齿孔区 0.7 孔高');
+  const barcode1 = blocks.find((op) => op.x < hc(4));
+  const barcode2 = blocks.find((op) => op.x >= hc(4));
+  assert.ok(barcode1 && barcode2, '两段条码分别位于 A 片号两侧');
+  assert.ok(barcode1.x >= hc(0), '条码从首孔右侧开始');
+  assert.ok(barcode1.x - bottomNumber.x >= stepPx * 0.25, '第一条条码与片号之间留出一个条宽的空隙');
+
+  // 遮罩：0 全高、2 下半、1 上半；列间无缝
+  const masks = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#0B0B0B' &&
+    op.x >= barcode1.x - 1 && op.x + op.w <= barcode2.x + barcode2.w + 1 && op.h > 1);
+  const p1 = '3232303031313031212021302030323';
+  const p2 = '3232303031313031212031213030323';
+  const nonThree = (t) => Array.from(t).filter((c) => c !== '3').length;
+  assert.equal(masks.length, nonThree(p1) + nonThree(p2), '每个 0/1/2 列都有一个遮罩');
+  const maskHeights = new Set(masks.map((op) => Math.round(op.h)));
+  assert.ok(maskHeights.size >= 3, '遮罩覆盖满高/上半/下半三种列');
 
   const longStrip = compose({ settings, imageW: 6000, imageH: 2000 });
   const longTexts = longStrip.ops.filter((op) => op.kind === 'text').map((op) => op.text);
   assert.ok(longTexts.includes('13'), '长片上的片号递增');
   assert.ok(longTexts.filter((t) => t === 'KODAK PORTRA 400').length >= 2, '长片上胶卷名重复');
   const longBars = longStrip.ops.filter((op) => op.kind === 'rect' && op.fill === '#F5A623');
-  assert.ok(longBars.length > barcodes.length, '长片上条码重复');
+  assert.ok(longBars.length > blocks.length, '长片上条码重复');
 
   ['P', '±0.0', '400', '250', 'F2.8'].forEach((value) => {
     const item = textOf(value);

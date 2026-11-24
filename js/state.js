@@ -99,7 +99,8 @@
       stockId: 'portra400',
       frameNo: '12',
       textSize: 24,
-      textOpacity: 1
+      textOpacity: 1,
+      edgeOpacity: 1
     },
     dv: {
       size: 15,
@@ -477,6 +478,7 @@
     s.frame.thickness = clampNum(s.frame.thickness, 0, 160, 18);
     s.film.textSize = clampNum(s.film.textSize, 8, 60, 24);
     s.film.textOpacity = clampNum(s.film.textOpacity, 0.35, 1, 1);
+    s.film.edgeOpacity = clampNum(s.film.edgeOpacity, 0.05, 1, 1);
     s.film.stock = String(s.film.stock || '').slice(0, 60);
     s.film.frameNo = String(s.film.frameNo || '12').slice(0, 8);
     s.dv.frameWidth = clampNum(s.dv.frameWidth, 1, 12, 4);
