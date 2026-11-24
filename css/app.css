@@ -852,6 +852,9 @@ body.resizing * { cursor: col-resize !important; }
   gap: 3px;
   padding: 0 12px;
   pointer-events: none;
+  /* 提示文字与图标跟着参考照片一起缩放 */
+  transform: scale(var(--empty-scale, 1));
+  transform-origin: center center;
 }
 .empty-icon { font-size: calc(34px * var(--font-scale)); color: var(--accent); opacity: .8; }
 .empty-title { color: var(--text); font-size: calc(16px * var(--font-scale)); font-weight: 600; margin: 6px 0 2px; }

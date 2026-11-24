@@ -136,7 +136,9 @@ async function main() {
       awaitPromise: true
     });
     if (result.exceptionDetails) {
-      throw new Error(result.exceptionDetails.text || 'evaluate 失败');
+      const ex = result.exceptionDetails.exception || {};
+      const detail = ex.description || ex.value || result.exceptionDetails.text || 'evaluate 失败';
+      throw new Error(detail);
     }
     return result.result ? result.result.value : undefined;
   }
@@ -1788,13 +1790,28 @@ async function main() {
       // 底部白边：外框变高，但照片区仍是 3:2
       card('bottom-bar').click();
       await sleep(520);
+      const probeTheme = (() => {
+        const scene = WM.ui.state.lastScene;
+        const ir = scene && scene.imageRect ? scene.imageRect : { x: 0, y: 0, w: 1200, h: 800 };
+        const d = canvas.getContext('2d').getImageData(
+          Math.round(ir.x + ir.w / 2), Math.round(ir.y + ir.h / 2), 1, 1).data;
+        const tr = getComputedStyle(document.querySelector('.empty-copy')).transform;
+        const m = tr.match(/matrix\\(([^,]+)/);
+        const boxW = box.getBoundingClientRect().width;
+        return {
+          photoAlpha: d[3],
+          promptScale: m ? Number(Number(m[1]).toFixed(3)) : 0,
+          expectedScale: Number((boxW / 800).toFixed(3))
+        };
+      })();
       const bottomBar = {
         template: WM.ui.settings.template,
         active: activeCount(),
         ratio: boxRatio(),
         canvasFilled: filled(),
         promptVisible: promptVisible(),
-        scene: sceneInfo()
+        scene: sceneInfo(),
+        ...probeTheme
       };
 
       card('bottom-bar').click();
@@ -1809,12 +1826,27 @@ async function main() {
       // 胶片：外框更高更窄，照片区仍 3:2
       card('film-frame').click();
       await sleep(520);
+      const probeFilm = (() => {
+        const scene = WM.ui.state.lastScene;
+        const ir = scene && scene.imageRect ? scene.imageRect : { x: 0, y: 0, w: 1200, h: 800 };
+        const d = canvas.getContext('2d').getImageData(
+          Math.round(ir.x + ir.w / 2), Math.round(ir.y + ir.h / 2), 1, 1).data;
+        const tr = getComputedStyle(document.querySelector('.empty-copy')).transform;
+        const m = tr.match(/matrix\\(([^,]+)/);
+        const boxW = box.getBoundingClientRect().width;
+        return {
+          photoAlpha: d[3],
+          promptScale: m ? Number(Number(m[1]).toFixed(3)) : 0,
+          expectedScale: Number((boxW / 800).toFixed(3))
+        };
+      })();
       const film = {
         template: WM.ui.settings.template,
         ratio: boxRatio(),
         canvasFilled: filled(),
         promptVisible: promptVisible(),
-        scene: sceneInfo()
+        scene: sceneInfo(),
+        ...probeFilm
       };
 
       card('film-frame').dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true }));
@@ -1826,8 +1858,17 @@ async function main() {
         promptVisible: promptVisible()
       };
 
+      const lightBg = getComputedStyle(box).backgroundColor;
+      document.querySelector('#theme-switch button[data-theme-mode="dark"]').click();
+      await sleep(420);
+      const darkBg = getComputedStyle(box).backgroundColor;
+      document.querySelector('#theme-switch button[data-theme-mode="light"]').click();
+      await sleep(300);
+
       return JSON.stringify({
         radius: cs.borderRadius,
+        lightBg,
+        darkBg,
         prompt: (document.querySelector('.empty-title') || {}).textContent || '',
         topbarOpen: !!document.getElementById('btn-open'),
         topbarDemo: !!document.getElementById('btn-demo'),
@@ -1863,14 +1904,20 @@ async function main() {
       result.bottomBar.scene.ratio < 1.45 &&
       result.bottomBar.canvasFilled && result.bottomBar.promptVisible &&
       result.bottomBar.scene.ops > 0 &&
+      result.bottomBar.photoAlpha === 0 &&
+      Math.abs(result.bottomBar.promptScale - result.bottomBar.expectedScale) <= 0.02 &&
       result.afterToggle.template === '' && close(result.afterToggle.ratio, 1.5, 0.02) &&
       result.afterToggle.canvasFilled === false && result.afterToggle.promptVisible &&
       result.film.template === 'film-frame' &&
       close(result.film.scene.photoRatio, 1.5, 0.012) &&
       close(result.film.ratio, result.film.scene.ratio, 0.01) &&
       result.film.scene.ratio < 1.2 && result.film.canvasFilled && result.film.promptVisible &&
+      result.film.photoAlpha === 0 &&
+      Math.abs(result.film.promptScale - result.film.expectedScale) <= 0.02 &&
+      result.film.promptScale < result.bottomBar.promptScale &&
       result.afterDbl.template === '' && close(result.afterDbl.ratio, 1.5, 0.02) &&
       result.afterDbl.canvasFilled === false && result.afterDbl.promptVisible &&
+      result.lightBg !== result.darkBg &&
       !result.banner;
     stopChrome();
     process.exit(healthy ? 0 : 1);

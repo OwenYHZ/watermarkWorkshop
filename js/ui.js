@@ -1054,29 +1054,11 @@
     if (h > availH) { h = availH; w = h * aspect; }
     box.style.width = Math.max(1, Math.round(w)) + 'px';
     box.style.height = Math.max(1, Math.round(h)) + 'px';
+    box.style.setProperty('--empty-scale', (w / 800).toFixed(3));
   }
 
   /* 无图状态也在画布上渲染当前模板，模拟一张照片导入后的样子 */
   /* 无图状态：一张空白参考照片 + 当前模板的水印预览 */
-  function mockPhotoCanvas() {
-    var canvas = document.createElement('canvas');
-    canvas.width = 1200;
-    canvas.height = 800;
-    var ctx = canvas.getContext('2d');
-    var g = ctx.createLinearGradient(0, 0, 1200, 800);
-    g.addColorStop(0, '#cfd7d5');
-    g.addColorStop(0.48, '#eae6df');
-    g.addColorStop(1, '#c2c9c8');
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 1200, 800);
-    var soft = ctx.createRadialGradient(430, 300, 40, 430, 300, 520);
-    soft.addColorStop(0, 'rgba(255, 255, 255, 0.42)');
-    soft.addColorStop(1, 'rgba(255, 255, 255, 0)');
-    ctx.fillStyle = soft;
-    ctx.fillRect(0, 0, 1200, 800);
-    return canvas;
-  }
-
   function mockSummary() {
     var summary = meta.buildSummary({
       format: 'jpeg',
@@ -1128,11 +1110,10 @@
       app.lastScene = null;
       return;
     }
-    var photo = mockPhotoCanvas();
     var summary = mockSummary();
     var fmt = previewDateFormatter();
-    // 参考照片固定 1200×800（3:2）；外框由模板自己决定，
-    // 成品整体再按预览区自适应，照片占比因此会随外框变大而变小。
+    // 参考照片固定 1200×800（3:2）；外框由模板自己决定。
+    // 照片区域保持透明，让下面那张磨砂容器透出来，因此深色/浅色主题都能一致。
     var scene = layout.compose({
       imageW: 1200,
       imageH: 800,
@@ -1147,7 +1128,27 @@
       formatTimeOnly: fmt.time
     });
     app.mockAspect = scene.output.w / scene.output.h;
-    render.draw(canvas, scene, { photo: photo, logo: null });
+    render.draw(canvas, scene, { photo: null, logo: null });
+
+    // 把照片区域重新挖空：模板背景（胶片黑底/白边纸/相纸）只留在照片外围，
+    // 照片区域露出磨砂容器；照片区域内的水印图元用离屏画布再叠回去。
+    var ir = scene.imageRect || { x: 0, y: 0, w: 1200, h: 800 };
+    var off = document.createElement('canvas');
+    off.width = canvas.width;
+    off.height = canvas.height;
+    var opsScene = {};
+    Object.keys(scene).forEach(function (key) { opsScene[key] = scene[key]; });
+    opsScene.background = null;
+    render.draw(off, opsScene, { photo: null, logo: null });
+    var ctx = canvas.getContext('2d');
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(ir.x, ir.y, ir.w, ir.h);
+    ctx.clip();
+    ctx.clearRect(ir.x, ir.y, ir.w, ir.h);
+    ctx.drawImage(off, 0, 0);
+    ctx.restore();
+
     app.lastScene = scene;
   }
 
