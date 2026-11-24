@@ -1323,26 +1323,42 @@
     function edgeBarcode(pattern, startX) {
       if (!pattern) return;
       var unit = (step * 2.66) / pattern.length;
-      var lowerTop = F - outerBand;              // 下齿孔下边沿
-      var upperTop = lowerTop - unit * 0.7; // 上半截侵入齿孔区 = 0.7 个条码列宽
+      var holeBottom = F - outerBand;      // 下齿孔下边沿
+      var bandTop = holeBottom - unit * 0.7; // 上半截只微微侵入齿孔
+      var mid = (holeBottom + F) / 2;      // 1/2 分界 = 齿孔下边沿与片边的中点
       var paint = edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity);
-      // 先铺一条 3333 的实心条，再用片基色遮出 0/1/2，保证列间绝无缝隙。
+      // 先铺一条 3333 的实心条，再用片基色遮出 0/1/2。
       ops.push({
-        kind: 'rect', x: startX, y: upperTop, w: unit * pattern.length, h: F - upperTop,
+        kind: 'rect', x: startX, y: bandTop, w: unit * pattern.length, h: F - bandTop,
         radius: 0, fill: paint, stroke: null, shadow: false
       });
+      // 把相邻且遮罩范围相同的列合并成一整块，并左右各多盖 1px，
+      // 避免两个遮罩相接处出现细亮缝（0/0、2/2 之间尤其明显）。
+      var runs = [];
       for (var idx = 0; idx < pattern.length; idx++) {
         var code = pattern.charAt(idx);
-        if (code === '3') continue;
-        var my = upperTop;
-        var mh = F - upperTop;
-        if (code === '2') { my = lowerTop; mh = F - lowerTop; }
-        else if (code === '1') { my = upperTop; mh = lowerTop - upperTop; }
+        if (code === '3') { runs.push(null); continue; }
+        var kind = code === '0' ? 'all' : code === '2' ? 'lower' : 'upper';
+        var last = runs[runs.length - 1];
+        if (last && last.kind === kind && last.end === idx - 1) {
+          last.end = idx;
+        } else {
+          runs.push({ kind: kind, start: idx, end: idx });
+        }
+      }
+      runs.forEach(function (run) {
+        if (!run) return;
+        // 上下两段在 mid 处相接：各向外多盖 1px，避免交界处漏出细亮线。
+        var y = run.kind === 'lower' ? mid - 1 : bandTop;
+        var h = run.kind === 'lower' ? F - mid + 1
+          : run.kind === 'all' ? F - bandTop : mid - bandTop + 1;
+        var x = startX + run.start * unit;
+        var w = (run.end - run.start + 1) * unit;
         ops.push({
-          kind: 'rect', x: startX + idx * unit, y: my, w: unit, h: mh,
+          kind: 'rect', x: x - 1, y: y, w: w + 2, h: h,
           radius: 0, fill: pal.base, stroke: null, shadow: false
         });
-      }
+      });
     }
 
     function edgeArrow(rightX, y) {
