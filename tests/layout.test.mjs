@@ -198,7 +198,7 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
     assert.ok(Math.abs(op.w - stepPx * 2.66) <= stepPx * 0.08, '条码组宽 ≈2.66P');
   });
   const outerBandPx = horizontal.output.h - (bottom[0].y + bottom[0].h);
-  const expectedH = outerBandPx + top[0].h * 0.7;
+  const expectedH = outerBandPx + (stepPx * 2.66 / 31) * 0.7;
   assert.ok(blocks.every((op) => Math.abs(op.h - expectedH) <= 4), '条码上半截伸入齿孔区 0.7 孔高');
   const barcode1 = blocks.find((op) => op.x < hc(4));
   const barcode2 = blocks.find((op) => op.x >= hc(4));

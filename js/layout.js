@@ -1324,7 +1324,7 @@
       if (!pattern) return;
       var unit = (step * 2.66) / pattern.length;
       var lowerTop = F - outerBand;              // 下齿孔下边沿
-      var upperTop = lowerTop - holeAcross * 0.7; // 上半截侵入齿孔区
+      var upperTop = lowerTop - unit * 0.7; // 上半截侵入齿孔区 = 0.7 个条码列宽
       var paint = edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity);
       // 先铺一条 3333 的实心条，再用片基色遮出 0/1/2，保证列间绝无缝隙。
       ops.push({
@@ -1401,7 +1401,7 @@
       var base = k * cycleLen;
       var num = ((info.start - 1 + k) % 36 + 36) % 36 + 1;
       edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.26, step * 0.95,
-        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 1);
+        'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
       var stockStartHole = style.stockHoles[0];
       var stockEndHole = style.stockHoles[1];
       var stockStart = base + holeCenter(stockStartHole) - holeAlong / 2;
@@ -1419,13 +1419,13 @@
 
       var bottomY = bandY(false);
       edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.30, step * 0.95,
-        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 1);
+        'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
       if (style.barcode1) {
         edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.36, false);
       }
       var aHole = style.aHole;
       edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
-        step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45, 1);
+        step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45);
       if (style.barcode2) {
         edgeBarcode(style.barcode2,
           base + holeCenter(style.aHole) + step * 0.40, false);
