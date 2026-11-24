@@ -152,20 +152,56 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const texts = horizontal.ops.filter((op) => op.kind === 'text');
   const textOf = (value) => texts.find((op) => op.text === value);
   const stock = textOf('KODAK PORTRA 400');
-  assert.ok(stock, '原有胶卷型号存在');
-  assert.equal(stock.color, '#FFB000');
+  assert.ok(stock, 'Portra 边字存在');
+  assert.equal(stock.color, '#FFB000', '边字橙色');
+  assert.ok(stock.family.indexOf('Consolas') >= 0, '边字使用硬朗的胶片字体');
   assert.equal(stock.shadowBlur, 0, '原有边字无光晕');
   assert.ok(stock.y < top[0].y, '原有边字在齿孔外侧');
-  assert.ok(texts.filter((op) => op.text === 'KODAK PORTRA 400').length >= 2,
-    '胶卷型号沿片长重复出现，而不是只出现一次');
-  const barcodes = horizontal.ops.filter((op) => op.kind === 'rect' &&
-    op.fill && String(op.fill).indexOf('255, 176, 0') >= 0);
-  assert.ok(barcodes.length >= 8, '真实边码条码存在');
-  assert.ok(textOf('12') && textOf('12A'), '片号按间隔生成 12, 12A');
+  assert.equal(texts.filter((op) => op.text === 'KODAK PORTRA 400').length, 1,
+    '单格只出现一次胶卷名（长图才重复）');
+
+  const topHoles = top.slice().sort((a, b) => a.x - b.x).slice(0, 9);
+  const hc = (i) => topHoles[i].x + topHoles[i].w / 2;
+  const topTexts = texts.filter((op) => op.y < horizontal.imageRect.y);
+  const bottomTexts = texts.filter((op) => op.y > horizontal.imageRect.y + horizontal.imageRect.h);
+  const topNumber = topTexts.find((op) => op.text === '12');
+  assert.ok(topNumber, '上侧片号 12');
+  assert.ok(Math.abs(topNumber.x - hc(0)) <= 2, '上片号在首孔正上方');
+  assert.equal(topNumber.color, '#FFB000', '片号与胶卷名同色');
+  const stockBox = render.textBounds(stock);
+  assert.ok(Math.abs((stockBox.x0 + stockBox.x1) / 2 - (hc(2) + hc(5)) / 2) <= 24,
+    '胶卷名跨第 3–6 孔居中');
+  assert.ok(Math.abs(stockBox.x0 - (hc(2) - topHoles[2].w / 2)) <= 12,
+    '胶卷名从第 3 孔左上开始');
+
+  const bottomNumber = bottomTexts.find((op) => op.text === '12');
+  const aNumber = bottomTexts.find((op) => op.text === '12A');
+  assert.ok(bottomNumber && aNumber, '下侧片号 12 / 12A');
+  assert.ok(Math.abs(bottomNumber.x - hc(0)) <= 2, '下片号在首孔正下方');
+  assert.ok(Math.abs(aNumber.x - hc(4)) <= 2, 'A 片号在第 5 孔下方');
+  assert.ok(aNumber.size < bottomNumber.size, 'A 片号比普通片号小');
+  const arrows = horizontal.ops.filter((op) => op.kind === 'line' && op.color === '#FFB000');
+  assert.equal(arrows.length, 3, 'A 片号下方有箭头（杆 + 两撇）');
+  assert.ok(arrows.every((op) => op.y1 > bottomNumber.y), '箭头在片号下方');
+
+  const barcodes = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#FFB000');
+  assert.ok(barcodes.length >= 20, '两段真实条码存在');
+  const barHeights = new Set(barcodes.map((op) => Math.round(op.h)));
+  const barTops = new Set(barcodes.map((op) => Math.round(op.y)));
+  assert.ok(barHeights.size >= 2, '条码包含满高与半高三两种高度');
+  assert.ok(barTops.size >= 2, '半高条码分为上半/下半（起点不同）');
+  const barcode1 = barcodes.filter((op) => op.x < hc(4));
+  const barcode2 = barcodes.filter((op) => op.x >= hc(4));
+  assert.ok(barcode1.length && barcode2.length, '两段条码分别位于 A 片号两侧');
+  assert.ok(Math.min(...barcodes.map((op) => op.x)) >= hc(0), '条码从首孔右侧开始');
+
   const longStrip = compose({ settings, imageW: 6000, imageH: 2000 });
   const longTexts = longStrip.ops.filter((op) => op.kind === 'text').map((op) => op.text);
   assert.ok(longTexts.includes('13'), '长片上的片号递增');
-  assert.ok(longTexts.filter((t) => t === 'KODAK PORTRA 400').length >= 4, '长片上胶卷名与条码重复');
+  assert.ok(longTexts.filter((t) => t === 'KODAK PORTRA 400').length >= 2, '长片上胶卷名重复');
+  const longBars = longStrip.ops.filter((op) => op.kind === 'rect' && op.fill === '#FFB000');
+  assert.ok(longBars.length > barcodes.length, '长片上条码重复');
+
   ['P', '±0.0', '400', '250', 'F2.8'].forEach((value) => {
     const item = textOf(value);
     assert.ok(item, 'Pentax 打印 ' + value);
@@ -236,6 +272,12 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   assert.equal(bw.background.color, '#0B0B0B');
   const bwTexts = bw.ops.filter((op) => op.kind === 'text').map((op) => op.color);
   assert.ok(bwTexts.every((color) => color === '#F4F4F4'));
+  const bwStock = bw.ops.find((op) => op.kind === 'text' && op.text === 'ILFORD HP5 PLUS 400');
+  assert.ok(bwStock && bwStock.color === '#F4F4F4', 'HP5 使用独立白字边字');
+  assert.ok(!bw.ops.some((op) => op.kind === 'rect' && op.fill === '#F4F4F4'),
+    'HP5 不套用 Portra 的橙色条码');
+  assert.ok(!bw.ops.some((op) => op.kind === 'line' && op.color === '#F4F4F4'),
+    'HP5 没有 Portra 的箭头');
 
   assert.deepEqual(state.FILM_TYPES.map((t) => t.value), ['bw-negative', 'color-negative']);
   assert.equal(state.sanitize({ film: { type: 'reversal' } }).film.type, 'color-negative');

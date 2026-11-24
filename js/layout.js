@@ -40,10 +40,57 @@
     }
   };
 
-  // 胶卷边字的外观（与 state.js 的 FILM_STOCKS 一一对应，新增型号时两处一起加）。
-  var FILM_STOCKS = {
-    portra400: { type: 'color-negative', name: 'KODAK PORTRA 400', edge: '#FFB000', number: '#F2E6CC' },
-    hp5: { type: 'bw-negative', name: 'ILFORD HP5 PLUS 400', edge: '#F4F4F4', number: '#F4F4F4' }
+  // 胶片边字字体：Consolas 的 0 带斜杠、K 笔画硬朗，接近真实底片扫描。
+  var EDGE_FONT = 'Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", monospace';
+
+  // 按胶卷型号定义边字样式；不同胶卷（即使同为彩负）互不套用。
+  var FILM_EDGE_STYLES = {
+    portra400: {
+      type: 'color-negative',
+      color: '#FFB000',
+      name: 'KODAK PORTRA 400',
+      // 第 1 孔出片号，第 9 孔开始下一片号 → 每 8 个孔一个循环。
+      cycle: 8,
+      stockHoles: [2, 5],
+      aHole: 4,
+      arrow: true,
+      numberScale: 1.04,
+      aScale: 0.84,
+      stockScale: 0.92,
+      tracking: 0.12,
+      barcode1: '3232303031313031212021302030323',
+      barcode2: '3232303031313031212031213030323'
+    },
+    generic: {
+      type: null,
+      color: '#F4F4F4',
+      name: '',
+      cycle: 8,
+      stockHoles: [2, 5],
+      aHole: 4,
+      arrow: false,
+      numberScale: 1,
+      aScale: 0.9,
+      stockScale: 0.92,
+      tracking: 0.12,
+      barcode1: null,
+      barcode2: null
+    },
+    hp5: {
+      type: 'bw-negative',
+      color: '#F4F4F4',
+      name: 'ILFORD HP5 PLUS 400',
+      cycle: 8,
+      stockHoles: [2, 5],
+      aHole: 4,
+      arrow: false,
+      numberScale: 1,
+      aScale: 0.9,
+      stockScale: 0.92,
+      tracking: 0.12,
+      barcode1: null,
+      barcode2: null
+    }
   };
 
   // DV 的 OSD 固定白色（真实摄像机 OSD 只有白色），不再提供调色。
@@ -1168,12 +1215,12 @@
     var imgH = acrossDim;
     var ops = [];
 
-    var stockInfo = FILM_STOCKS[s.film.stockId];
-    if (!stockInfo || stockInfo.type !== s.film.type) {
-      stockInfo = FILM_STOCKS[s.film.type === 'bw-negative' ? 'hp5' : 'portra400'];
+    var style = FILM_EDGE_STYLES[s.film.stockId];
+    if (!style) style = FILM_EDGE_STYLES.generic;
+    if (style.type && style.type !== s.film.type) {
+      style = FILM_EDGE_STYLES[s.film.type === 'bw-negative' ? 'hp5' : 'generic'];
     }
-    var edgeColor = stockInfo.edge;
-    var numberColor = stockInfo.number;
+    var edgeColor = style.color;
     var printColor = edgeColor;
     // 胶片原有边字固定字号/不透明度；打印字号与透明度只影响下面的打印内容。
     var edgeOpacity = 1;
@@ -1215,16 +1262,24 @@
     var outerBand = Math.max(1, border - innerGap - holeAcross);
     var outerCenter = outerBand / 2;
 
+    function holeCenter(index) {
+      return (index + 0.5) * step;
+    }
+
     function bandY(top) {
       return top ? outerCenter : F - outerCenter;
     }
 
-    function fitFilmLine(text, size, maxW, weight, tracking) {
+    function fitEdgeLine(text, size, maxW) {
       if (!text) return null;
-      var block = fitBlock([{ text: text, size: size, weight: weight || 600, opacity: 1 }],
-        maxW, FAMILIES.mono, 1, measure, tracking == null ? 0.12 : tracking);
+      var block = fitBlock([{ text: text, size: size, weight: 700, opacity: 1 }],
+        maxW, EDGE_FONT, 1, measure, style.tracking);
       var line = block.lines[0];
-      return line && line.size >= size * 0.45 ? line : null;
+      return line && line.size >= size * 0.42 ? line : null;
+    }
+
+    function fitFilmLine(text, size, maxW) {
+      return fitEdgeLine(text, size, maxW);
     }
 
     function pushFilmText(text, x, y, size, color, opacity, rotation, glow, align) {
@@ -1239,38 +1294,45 @@
       }));
     }
 
-    function edgeText(text, along, top, size, color, maxW) {
-      if (!text) return;
-      var line = fitFilmLine(text, size, maxW || Math.max(step * 1.2, alongTotal * 0.9), 700, 0.1);
+    function edgeTextAt(text, x, y, size, maxW, align) {
+      var line = fitEdgeLine(text, size, maxW);
       if (!line) return;
       // 故意不把两端收进来：贴边处被裁掉一部分才像真实扫描。
-      ops.push(textOp(line.text, along, bandY(top), line.size, 700, FAMILIES.mono, color, edgeOpacity, {
-        align: 'center',
+      ops.push(textOp(line.text, x, y, line.size, 700, EDGE_FONT, edgeColor, edgeOpacity, {
+        align: align || 'center',
         shadow: false,
         shadowBlur: 0,
-        tracking: line.size * 0.1,
+        tracking: line.size * style.tracking,
         rotation: 0
       }));
     }
 
-    function edgeBarcode(centerAlong, top) {
-      var unit = Math.max(0.045 * mm, mm * 0.045);
-      var pattern = [1, 2, 1, 3, 1, 1, 2, 1, 3, 2, 1, 2];
-      var total = 0;
-      pattern.forEach(function (w) { total += w * unit; });
-      total += (pattern.length - 1) * unit * 0.7;
-      var x = centerAlong - total / 2;
-      var fullH = outerBand * 0.82;
-      var shortH = fullH * 0.62;
-      var bandCenter = bandY(top);
-      pattern.forEach(function (w, idx) {
-        var h = idx % 3 === 0 || idx % 5 === 0 ? fullH : shortH;
+    function edgeBarcode(pattern, startX, endX, top) {
+      if (!pattern) return;
+      var span = Math.max(1, endX - startX);
+      var unit = span / pattern.length;
+      var bandTop = top ? 0 : F - outerBand;
+      var pad = outerBand * 0.10;
+      var mid = bandTop + outerBand / 2;
+      for (var idx = 0; idx < pattern.length; idx++) {
+        var code = pattern.charAt(idx);
+        if (code === '0') continue;
+        var h = code === '3' ? outerBand - pad * 2 : outerBand / 2 - pad;
+        var y = code === '1' ? mid : bandTop + pad;
         ops.push({
-          kind: 'rect', x: x, y: bandCenter - h / 2, w: w * unit, h: h,
-          radius: 0, fill: rgba(edgeColor, edgeOpacity), stroke: null, shadow: false
+          kind: 'rect', x: startX + idx * unit, y: y, w: unit * 0.62, h: h,
+          radius: 0, fill: edgeColor, stroke: null, shadow: false
         });
-        x += w * unit + unit * 0.7;
-      });
+      }
+    }
+
+    function edgeArrow(cx, y, width) {
+      var lw = Math.max(1, mm * 0.12);
+      var head = width * 0.28;
+      var half = width * 0.22;
+      ops.push({ kind: 'line', x1: cx - width / 2, y1: y, x2: cx + width / 2, y2: y, color: edgeColor, width: lw });
+      ops.push({ kind: 'line', x1: cx + width / 2 - head, y1: y - half, x2: cx + width / 2, y2: y, color: edgeColor, width: lw });
+      ops.push({ kind: 'line', x1: cx + width / 2 - head, y1: y + half, x2: cx + width / 2, y2: y, color: edgeColor, width: lw });
     }
 
     function frameStartInfo(raw) {
@@ -1291,22 +1353,52 @@
       return 'F' + raw.replace(/^f\s*\/?\s*/i, '');
     }
 
-    // 真实 135 边字：每 8 个孔（一格）重复「片号 / 片号A / 胶卷名×2 / 条码×2」，
-    // 超长片会不断递增/重复；两端故意允许被裁切。
+    // 按真实 Portra 135 的 9 孔循环：
+    // 上：片号在首孔上方，胶卷名跨第 3–6 孔；
+    // 下：片号在首孔下方，条码1跨 1–4 孔，A 片号在第 5 孔下方（更小 + 箭头），条码2跨 5–8 孔。
     var info = frameStartInfo(s.film.frameNo);
-    var baseBlock = step * 8;
-    var blocks = Math.max(1, Math.round(alongTotal / baseBlock));
-    var cell = alongTotal / blocks;
-    for (var b = 0; b < blocks; b++) {
-      var base = b * cell;
-      var num = ((info.start - 1 + b) % 36 + 36) % 36 + 1;
-      // 一格内：片号 / 片号A / 胶卷名×2 / 条码×2，错位排布。
-      edgeText(String(num), base + cell * 0.10, true, edgeSize, numberColor, cell * 0.16);
-      edgeText(String(num) + 'A', base + cell * 0.20, false, edgeSize, numberColor, cell * 0.18);
-      edgeText(stockInfo.name, base + cell * 0.50, true, edgeSize * 0.92, edgeColor, cell * 0.55);
-      edgeText(stockInfo.name, base + cell * 0.60, false, edgeSize * 0.92, edgeColor, cell * 0.55);
-      edgeBarcode(base + cell * 0.88, true);
-      edgeBarcode(base + cell * 0.92, false);
+    var lastHole = Math.max(0, n - 1);
+    var cycleLen = style.cycle * step;
+    var cycles = Math.max(1, Math.ceil(alongTotal / cycleLen));
+    for (var k = 0; k < cycles; k++) {
+      var base = k * cycleLen;
+      var num = ((info.start - 1 + k) % 36 + 36) % 36 + 1;
+      edgeTextAt(String(num), base + holeCenter(0), bandY(true), edgeSize * style.numberScale, step * 0.9);
+      var stockStartHole = Math.min(style.stockHoles[0], lastHole);
+      var stockEndHole = Math.min(style.stockHoles[1], lastHole);
+      var stockStart = base + holeCenter(stockStartHole) - holeAlong / 2;
+      var stockEnd = base + holeCenter(stockEndHole) + holeAlong / 2;
+      if (stockEndHole >= lastHole) stockEnd = Math.min(stockEnd, alongTotal - holeAlong * 0.2);
+      if (stockEnd > stockStart) {
+        var stockSpan = stockEnd - stockStart;
+        var stockTarget = edgeSize * style.stockScale;
+        var naturalWidth = measure(style.name, {
+          size: stockTarget, weight: 700, family: EDGE_FONT, tracking: stockTarget * style.tracking
+        });
+        if (naturalWidth > 0) stockTarget *= Math.min(1.45, (stockSpan * 0.98) / naturalWidth);
+        edgeTextAt(style.name, stockStart, bandY(true), stockTarget, stockSpan, 'left');
+      }
+
+      var bottomY = bandY(false) - (style.arrow ? edgeSize * 0.12 : 0);
+      edgeTextAt(String(num), base + holeCenter(0), bottomY, edgeSize * style.numberScale, step * 0.9);
+      if (style.barcode1) {
+        edgeBarcode(style.barcode1,
+          base + holeCenter(0) + holeAlong / 2,
+          base + holeCenter(3), false);
+      }
+      var aHole = Math.min(style.aHole, lastHole);
+      edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
+        edgeSize * style.aScale, step * 0.9);
+      if (style.arrow) {
+        edgeArrow(base + holeCenter(aHole), bandY(false) + edgeSize * 0.55,
+          Math.max(edgeSize * 0.9, holeAlong * 0.72));
+      }
+      if (style.barcode2) {
+        var b2start = base + holeCenter(style.aHole) + holeAlong / 2;
+        var b2end = Math.min(base + (holeCenter(7) + holeCenter(8)) / 2,
+          alongTotal - holeAlong * 0.2);
+        if (b2end > b2start) edgeBarcode(style.barcode2, b2start, b2end, false);
+      }
     }
 
     if (s.film.printStyle !== 'none') {

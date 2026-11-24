@@ -247,12 +247,12 @@
       var pentaxItems = [expectedMode, expectedComp, '400', '250', 'F2.8'];
       log(pentaxItems.every(function (t) { return !!filmTexts.filter(function (op) { return op.text === t; })[0]; }),
         'Pentax 孔间打印档位/曝光补偿/ISO/快门/光圈');
-      log(filmTexts.filter(function (op) { return op.text === 'KODAK PORTRA 400'; }).length >= 2,
-        '胶卷型号沿片长重复出现');
+      log(filmTexts.filter(function (op) { return op.text === 'KODAK PORTRA 400'; }).length === 1,
+        '单格内胶卷型号出现一次（长图才重复）');
       var filmBars = filmScene.ops.filter(function (op) {
-        return op.kind === 'rect' && op.fill && String(op.fill).indexOf('255, 176, 0') >= 0;
+        return op.kind === 'rect' && op.fill === '#FFB000';
       });
-      log(filmBars.length >= 8, '边码条码存在');
+      log(filmBars.length >= 20, '两段真实条码存在');
       log(!!filmTexts.filter(function (op) { return op.text === '12'; })[0] &&
         !!filmTexts.filter(function (op) { return op.text === '12A'; })[0], '片号按间隔出现 12/12A');
 

@@ -1055,20 +1055,28 @@ async function main() {
       const stockSelect = () => document.querySelector('#controls select[data-path="film.stockId"]');
       result.film.stockOptions = stockSelect()
         ? Array.from(stockSelect().options).map((o) => o.textContent) : [];
+      result.film.holeSeg = document.querySelectorAll(
+        '#controls .ctrl-row[data-path="film.holeColor"] .seg-btn').length;
       clickSeg('film.type', 'bw-negative');
       await sleep(380);
       result.film.bwStock = {
         value: WM.ui.settings.film.stockId,
         options: stockSelect() ? Array.from(stockSelect().options).map((o) => o.textContent) : []
       };
+      result.film.bwEdge = {
+        bars: WM.ui.state.lastScene.ops.filter((op) =>
+          op.kind === 'rect' && op.fill === '#F4F4F4').length,
+        arrows: WM.ui.state.lastScene.ops.filter((op) =>
+          op.kind === 'line' && op.color === '#F4F4F4').length
+      };
       clickSeg('film.type', 'color-negative');
       await sleep(380);
       result.film.labels = result.film.texts.filter((t) => t.text === '12' || t.text === '12A').map((t) => t.text);
-      selectValue('film.holeColor', 'black');
+      clickSeg('film.holeColor', 'black');
       await sleep(350);
       result.film.blackHoles = WM.ui.state.lastScene.ops
         .filter((op) => op.kind === 'rect' && op.fill === '#000000').length;
-      selectValue('film.holeColor', 'white');
+      clickSeg('film.holeColor', 'white');
       await sleep(300);
       // 片号间隔在更长的片长上验证（竖向 1200px 才有足够孔位）
       clickSeg('film.orientation', 'vertical');
@@ -1392,10 +1400,12 @@ async function main() {
       result.bottomBar.afterLeft && result.bottomBar.afterLeft.logoX > result.bottomBar.afterLeft.lineX &&
       result.bottomBar.noLogoLine === false &&
       result.film && result.film.background === '#0B0B0B' && result.film.holes >= 8 &&
-      result.film.holeShapeOk && result.film.stockCount >= 2 &&
+      result.film.holeShapeOk && result.film.stockCount >= 1 &&
       result.film.stockOptions.join(',') === 'KODAK PORTRA 400' &&
+      result.film.holeSeg === 2 &&
       result.film.bwStock && result.film.bwStock.value === 'hp5' &&
       result.film.bwStock.options.join(',') === 'ILFORD HP5 PLUS 400' &&
+      result.film.bwEdge && result.film.bwEdge.bars === 0 && result.film.bwEdge.arrows === 0 &&
       result.film.labels.indexOf('12') >= 0 && result.film.labels.indexOf('12A') >= 0 &&
       result.film.blackHoles >= 8 &&
       result.film.pentaxFields.every((t) => filmTexts.some((op) => op.text === t)) &&

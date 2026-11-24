@@ -1289,7 +1289,7 @@
         { type: 'seg', label: '底片类型', path: 'film.type', options: state.FILM_TYPES },
         { type: 'select', label: '胶卷', path: 'film.stockId', options: 'filmStocks' },
         { type: 'seg', label: '齿孔方向', path: 'film.orientation', options: state.FILM_ORIENTATIONS },
-        { type: 'select', label: '齿孔颜色', path: 'film.holeColor', options: state.FILM_HOLE_COLORS }
+        { type: 'seg', label: '齿孔颜色', path: 'film.holeColor', options: state.FILM_HOLE_COLORS }
       ]
     },
     {
