@@ -1043,9 +1043,9 @@ async function main() {
       result.film = {
         output: film.output,
         background: film.background && film.background.color,
-        holes: film.ops.filter((op) => op.kind === 'rect' && op.fill === '#F4F1E8').length,
+        holes: film.ops.filter((op) => op.kind === 'rect' && op.fill === '#FCFCFC').length,
         orientation: WM.ui.settings.film.orientation,
-        holeShapeOk: film.ops.filter((op) => op.kind === 'rect' && op.fill === '#F4F1E8')
+        holeShapeOk: film.ops.filter((op) => op.kind === 'rect' && op.fill === '#FCFCFC')
           .every((op) => WM.ui.settings.film.orientation === 'vertical' ? op.w > op.h : op.w < op.h),
         texts: film.ops.filter((op) => op.kind === 'text').map((op) => ({
           text: op.text, color: op.color, blur: op.shadowBlur
@@ -1117,7 +1117,7 @@ async function main() {
       await sleep(400);
       const vFilm = WM.ui.state.lastScene;
       const vHoles = vFilm.ops.filter((op) => op.kind === 'rect' &&
-        (op.fill === '#F4F1E8' || op.fill === '#000000') && op.w > 2 && op.h > 2);
+        (op.fill === '#FCFCFC' || op.fill === '#000000') && op.w > 2 && op.h > 2);
       const vTexts = vFilm.ops.filter((op) => op.kind === 'text');
       result.film.verticalMinolta = {
         portrait: vFilm.output.w < vFilm.output.h,

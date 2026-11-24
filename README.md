@@ -72,7 +72,7 @@ node server.mjs
 | 参数卡 | 品牌型号 + FOCAL / APERTURE / SHUTTER / ISO / LENS 参数表，可选纯色 / 毛玻璃 / 渐变底衬 |
 | 拍立得 | 白边相纸，说明文字与品牌居中堆叠 |
 | 底部白边 | 照片下方白色底栏，左下 / 右下各 1–2 个可配置槽位；logo 紧邻文字组 |
-| 胶片齿孔 | 135 固定比例：白色/黑色齿孔、片长两端各 0.5mm 黑边、真实边字/条码重复、Minolta/Pentax/Canon 打印预设；黑白 / 彩负 |
+| 胶片齿孔 | 135 固定比例：白色/黑色齿孔、片长两端各 0.5mm 黑边、真实 Portra 边字/条码、Minolta/Pentax/Canon 打印预设；黑白 / 彩负 |
 | DV 界面 | 摄像机 OSD（固定白色）：单折线取景框、REC、分辨率、电池、日期/时间、时间码、曝光标尺、中心对焦框、三分线 |
 | 平铺版权 | 半透明斜排版权文字，可调角度、密度、透明度 |
 
@@ -128,8 +128,10 @@ node server.mjs
   - **Portra 400** 严格按真实 135 的孔位（第 1 孔出片号，第 9 孔出下一片号，即每 8 孔一循环）：
       - 上侧：片号（如 `9`）在**第 1 个上孔正上方**；`KODAK PORTRA 400` 从**第 3 孔左上**到**第 6 孔右上**；第 9 孔开始下一个片号（`10`）。
       - 下侧：片号（如 `9`）在**第 1 个下孔正下方**；第一段条码从**第 1 孔右下**到**第 4 孔下方**；**第 5 孔正下方是 A 片号**（如 `9A`，比普通片号小一点），A 片号下面有**右向箭头**；第二段条码从**第 5 孔右下**到**第 8/9 孔之间**；第 9 孔开始下一个循环。
-    - 两段条码内容固定为 `3232303031313031212021302030323` 与 `3232303031313031212031213030323`，逐列渲染：`3` 满高、`2` 上半高、`1` 下半高、`0` 空；条码与孔位、片号的距离固定。
-    - 边字使用 **Consolas 粗体**（`0` 带斜杠、`K` 笔画硬直），片号、A 片号、胶卷名、条码、箭头全部为 Portra 橙（`#FFB000`）。
+    - 两段条码内容固定为 `3232303031313031212021302030323` 与 `3232303031313031212031213030323`（各 31 列），逐列渲染：`3` 满高、`2` 上半高、`1` 下半高、`0` 空；每列宽 = 2.66P / 31，列与列紧贴、**没有额外缝隙**，所以 `0` 与 `1/2/3` 同宽，相邻的非 0 列会合并成实心块。
+    - 条码带从**孔下缘**一直贴到**片边**：满高 ≈0.449P、上半 ≈0.265P、下半 ≈0.184P。
+    - 片号使用 **Verdana Bold**（宽、矮胖，`0` 是干净椭圆，无点无斜杠）；胶卷名使用 **Arial Narrow Bold**。片号、A 片号、胶卷名、条码、箭头全部为暗金 `#A0722D`（接近真实 Portra 边字的 (150,112,44)）。
+    - 片号 cap 高度：上侧 0.243P、下侧 0.28P、A 号 0.20P；箭头总长 0.77P、杆厚 0.042P、头长 0.25P，贴片边且右端与 A 号右缘对齐。
     - 长图上片号每 8 孔递增，胶卷名与两段条码不断重复；首尾不内缩，贴边内容允许被裁切。
   - **HP5** 使用自己的白字边字样式（独立的循环、字号与布局，没有 Portra 的橙色条码与箭头），后续可直接按真实 HP5 扫描继续细化。
 - 边字字号只由 35mm 片宽决定、透明度固定为 1；**打印字号 / 打印透明度只作用于 Pentax / Minolta / Canon 打印内容**，不影响原有边字。
@@ -237,7 +239,7 @@ node tests/cdp-check.mjs shots    "http://127.0.0.1:5173/?demo=canon-r5.jpg"
 - `left`：验证底部图片卡片切换、EXIF 双击修改 Make / Model / FNumber、水印像素变化、复位与移除当前照片。
 - `resize`：验证网页字号 1.25 倍、左右侧栏真实鼠标拖动、键盘微调、双击复位、宽度持久化与移动端单列；同时断言**左右侧栏各自通高到底、底部图片列表卡与中间列同宽同缘、标题与右上三个导出按钮正确**、**预览区没有工具栏/页脚且面板背景透明无阴影**、**卡片柔光多段阴影生效**、**底栏所有缩略图等大且底边对齐（无缩放）**，以及预设条贴在右栏底部。
 - `real`：加载真实 45MB PNG，确认 XMP 摘要含品牌 / 镜头 / 光圈 / 快门 / ISO 并正常渲染。
-- `export`：默认断言「原格式 + 100% 质量 + 原尺寸」；JPG 输入导出 JPEG，PNG 输入导出 PNG（`nikon-z6_watermark.png`）；生成真实水印 JPEG 到 `shots/`；`shots`：生成六套模板截图，以及 `film-bw`、`film-minolta`、`film-canon-date`、`film-vertical-minolta`、`film-vertical-canon`、`film-horizontal-minolta`、`bottom-bar-logo-left`、`dv-center-focus`、`export-settings-modal`、`preset-popover`、`dock-scroll`、`no-exif-filled`、`zoom-out`、`mock-preview`、`mock-dark`、`film-long`、`film-panorama`、`film-portra`、`film-hp5`、`film-landscape`；`theme`：生成 `theme-light`、`theme-dark`。
+- `export`：默认断言「原格式 + 100% 质量 + 原尺寸」；JPG 输入导出 JPEG，PNG 输入导出 PNG（`nikon-z6_watermark.png`）；生成真实水印 JPEG 到 `shots/`；`shots`：生成六套模板截图，以及 `film-bw`、`film-minolta`、`film-canon-date`、`film-vertical-minolta`、`film-vertical-canon`、`film-horizontal-minolta`、`bottom-bar-logo-left`、`dv-center-focus`、`export-settings-modal`、`preset-popover`、`dock-scroll`、`no-exif-filled`、`zoom-out`、`mock-preview`、`mock-dark`、`film-long`、`film-panorama`、`film-portra`、`film-hp5`；`theme`：生成 `theme-light`、`theme-dark`。
 
 > 受限的 DSH 沙箱会禁止浏览器创建命名管道；上述浏览器检查需要在允许启动 Chrome / Edge 的环境运行。
 

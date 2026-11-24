@@ -234,7 +234,7 @@
       var filmScene = composeWith({ settings: filmSettings });
       nearly(filmScene.output.h, 800 * 35 / 24, 2, '胶片片宽比例');
       eq(filmScene.background.color, '#0B0B0B', '胶片黑色片基');
-      var filmHoles = filmScene.ops.filter(function (op) { return op.kind === 'rect' && op.fill === '#F4F1E8'; });
+      var filmHoles = filmScene.ops.filter(function (op) { return op.kind === 'rect' && op.fill === '#FCFCFC'; });
       log(filmHoles.length >= 8, '胶片白色齿孔排布');
       log(filmHoles.length && filmHoles.every(function (op) { return op.w < op.h; }), '横向胶片孔为竖向长孔');
       var filmTexts = filmScene.ops.filter(function (op) { return op.kind === 'text'; });
@@ -250,7 +250,7 @@
       log(filmTexts.filter(function (op) { return op.text === 'KODAK PORTRA 400'; }).length === 1,
         '单格内胶卷型号出现一次（长图才重复）');
       var filmBars = filmScene.ops.filter(function (op) {
-        return op.kind === 'rect' && op.fill === '#FFB000';
+        return op.kind === 'rect' && op.fill === '#A0722D';
       });
       log(filmBars.length >= 20, '两段真实条码存在');
       log(!!filmTexts.filter(function (op) { return op.text === '12'; })[0] &&

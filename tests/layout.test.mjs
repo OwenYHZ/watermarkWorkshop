@@ -136,7 +136,7 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   assert.ok(Math.abs(horizontal.imageRect.y - 5.5 * unit) <= 1, '片边 5.5mm');
   assert.equal(horizontal.background.color, '#0B0B0B');
 
-  const holes = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#F4F1E8');
+  const holes = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#FCFCFC');
   const top = holes.filter((op) => op.y < horizontal.imageRect.y);
   const bottom = holes.filter((op) => op.y > horizontal.imageRect.y + horizontal.imageRect.h);
   assert.ok(top.length >= 4 && bottom.length >= 4, '上下都有白色齿孔');
@@ -153,8 +153,8 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const textOf = (value) => texts.find((op) => op.text === value);
   const stock = textOf('KODAK PORTRA 400');
   assert.ok(stock, 'Portra 边字存在');
-  assert.equal(stock.color, '#FFB000', '边字橙色');
-  assert.ok(stock.family.indexOf('Consolas') >= 0, '边字使用硬朗的胶片字体');
+  assert.equal(stock.color, '#A0722D', '边字暗金色');
+  assert.ok(stock.family.indexOf('Arial') >= 0, '边字使用硬朗的胶片字体');
   assert.equal(stock.shadowBlur, 0, '原有边字无光晕');
   assert.ok(stock.y < top[0].y, '原有边字在齿孔外侧');
   assert.equal(texts.filter((op) => op.text === 'KODAK PORTRA 400').length, 1,
@@ -167,7 +167,7 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const topNumber = topTexts.find((op) => op.text === '12');
   assert.ok(topNumber, '上侧片号 12');
   assert.ok(Math.abs(topNumber.x - hc(0)) <= 2, '上片号在首孔正上方');
-  assert.equal(topNumber.color, '#FFB000', '片号与胶卷名同色');
+  assert.equal(topNumber.color, '#A0722D', '片号与胶卷名同色');
   const stockBox = render.textBounds(stock);
   assert.ok(Math.abs((stockBox.x0 + stockBox.x1) / 2 - (hc(2) + hc(5)) / 2) <= 24,
     '胶卷名跨第 3–6 孔居中');
@@ -180,26 +180,41 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   assert.ok(Math.abs(bottomNumber.x - hc(0)) <= 2, '下片号在首孔正下方');
   assert.ok(Math.abs(aNumber.x - hc(4)) <= 2, 'A 片号在第 5 孔下方');
   assert.ok(aNumber.size < bottomNumber.size, 'A 片号比普通片号小');
-  const arrows = horizontal.ops.filter((op) => op.kind === 'line' && op.color === '#FFB000');
-  assert.equal(arrows.length, 3, 'A 片号下方有箭头（杆 + 两撇）');
+  const arrows = horizontal.ops.filter((op) => op.kind === 'line' && op.color === '#A0722D');
+  assert.ok(arrows.length >= 3, 'A 片号下方有箭头（杆 + 两撇）');
   assert.ok(arrows.every((op) => op.y1 > bottomNumber.y), '箭头在片号下方');
+  const arrowXs = arrows.flatMap((op) => [op.x1, op.x2]);
+  const arrowLen = Math.max(...arrowXs) - Math.min(...arrowXs);
+  const stepPx0 = hc(1) - hc(0);
+  assert.ok(Math.abs(arrowLen - stepPx0 * 0.77) <= stepPx0 * 0.15, '箭头总长 ≈0.77P');
+  assert.ok(Math.max(...arrowXs) > hc(4), '箭头右端伸到 A 片号右侧');
 
-  const barcodes = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#FFB000');
+  const barcodes = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#A0722D');
   assert.ok(barcodes.length >= 20, '两段真实条码存在');
   const barHeights = new Set(barcodes.map((op) => Math.round(op.h)));
   const barTops = new Set(barcodes.map((op) => Math.round(op.y)));
-  assert.ok(barHeights.size >= 2, '条码包含满高与半高三两种高度');
+  assert.ok(barHeights.size >= 3, '条码包含满高/上半/下半三种高度');
   assert.ok(barTops.size >= 2, '半高条码分为上半/下半（起点不同）');
   const barcode1 = barcodes.filter((op) => op.x < hc(4));
   const barcode2 = barcodes.filter((op) => op.x >= hc(4));
   assert.ok(barcode1.length && barcode2.length, '两段条码分别位于 A 片号两侧');
   assert.ok(Math.min(...barcodes.map((op) => op.x)) >= hc(0), '条码从首孔右侧开始');
+  const b1 = barcodes.filter((op) => op.x < hc(4));
+  const b1w = Math.max(...b1.map((op) => op.x + op.w)) - Math.min(...b1.map((op) => op.x));
+  const stepPx = hc(1) - hc(0);
+  assert.ok(Math.abs(b1w - stepPx * 2.66) <= stepPx * 0.08, '条码组宽 ≈2.66P');
+  const barUnit = (stepPx * 2.66) / 31;
+  b1.forEach((op) => {
+    assert.ok(Math.abs(op.w - barUnit) <= 0.35, '每列条码填满列宽（0 与 1/2/3 等宽）');
+    const offset = (op.x - Math.min(...b1.map((b) => b.x))) / barUnit;
+    assert.ok(Math.abs(offset - Math.round(offset)) <= 0.02, '条码列按等宽列排布，没有额外缝隙');
+  });
 
   const longStrip = compose({ settings, imageW: 6000, imageH: 2000 });
   const longTexts = longStrip.ops.filter((op) => op.kind === 'text').map((op) => op.text);
   assert.ok(longTexts.includes('13'), '长片上的片号递增');
   assert.ok(longTexts.filter((t) => t === 'KODAK PORTRA 400').length >= 2, '长片上胶卷名重复');
-  const longBars = longStrip.ops.filter((op) => op.kind === 'rect' && op.fill === '#FFB000');
+  const longBars = longStrip.ops.filter((op) => op.kind === 'rect' && op.fill === '#A0722D');
   assert.ok(longBars.length > barcodes.length, '长片上条码重复');
 
   ['P', '±0.0', '400', '250', 'F2.8'].forEach((value) => {
@@ -262,7 +277,7 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   settings.film.printStyle = 'pentax';
   settings.film.orientation = 'vertical';
   const vertical = compose({ settings });
-  const vholes = vertical.ops.filter((op) => op.kind === 'rect' && op.fill === '#F4F1E8');
+  const vholes = vertical.ops.filter((op) => op.kind === 'rect' && op.fill === '#FCFCFC');
   assert.ok(vholes.some((op) => op.x < vertical.imageRect.x));
   assert.ok(vholes.some((op) => op.x > vertical.imageRect.x + vertical.imageRect.w));
   assert.ok(vholes.every((op) => op.w > op.h), '竖向胶卷的孔为横向长孔');
@@ -338,7 +353,7 @@ test('胶片：竖向齿孔整幅旋转，文字不压齿孔', () => {
     const scene = compose({ settings, imageW: 800, imageH: 1200 });
     assert.ok(scene.output.w < scene.output.h, style + '：竖向画布');
     const holes = scene.ops.filter((op) => op.kind === 'rect' &&
-      (op.fill === '#F4F1E8' || op.fill === '#000000') && op.w > 2 && op.h > 2);
+      (op.fill === '#FCFCFC' || op.fill === '#000000') && op.w > 2 && op.h > 2);
     assert.ok(holes.length >= 8, style + '：齿孔存在');
     scene.ops.filter((op) => op.kind === 'text').forEach((op) => {
       const box = render.textBounds(op);
