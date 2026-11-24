@@ -42,7 +42,7 @@
 
   // 胶片边字字体：真实 Portra 的 0 是干净椭圆，不带点也不带斜杠。
   var EDGE_FONT = 'Arial, "Helvetica Neue", Helvetica, sans-serif';
-  var EDGE_NUM_FONT = 'Verdana, "DejaVu Sans", Arial, sans-serif';
+  var EDGE_NUM_FONT = 'Arial, "Helvetica Neue", Helvetica, sans-serif';
   var EDGE_STOCK_FONT = '"Arial Narrow", "Helvetica Neue", Arial, sans-serif';
 
   // 按胶卷型号定义边字样式；不同胶卷（即使同为彩负）互不套用。
@@ -1296,7 +1296,7 @@
       }));
     }
 
-    function edgeTextAt(text, x, y, size, maxW, align, family, weight, tracking) {
+    function edgeTextAt(text, x, y, size, maxW, align, family, weight, tracking, scaleX) {
       var font = family || EDGE_FONT;
       var w = weight || 700;
       var trk = tracking == null ? style.tracking : tracking;
@@ -1310,7 +1310,8 @@
         shadow: false,
         shadowBlur: 0,
         tracking: line.size * trk,
-        rotation: 0
+        rotation: 0,
+        scaleX: scaleX || 1
       }));
     }
 
@@ -1319,6 +1320,7 @@
     function edgeBarcode(pattern, startX, top) {
       if (!pattern) return;
       var unit = (step * 2.66) / pattern.length;
+      var gap = Math.max(0.5, step * 0.008);
       var bandTop = top ? 0 : F - outerBand;
       var bandH = outerBand;
       for (var idx = 0; idx < pattern.length; idx++) {
@@ -1327,24 +1329,36 @@
         var h = code === '3' ? bandH : code === '2' ? bandH * 0.59 : bandH * 0.41;
         var y = code === '1' ? bandTop + bandH - h : bandTop;
         ops.push({
-          kind: 'rect', x: startX + idx * unit, y: y, w: unit, h: h,
+          kind: 'rect', x: startX + idx * unit + gap / 2, y: y, w: Math.max(0.5, unit - gap), h: h,
           radius: 0, fill: edgeColor, stroke: null, shadow: false
         });
       }
     }
 
     function edgeArrow(rightX, y) {
-      // 真实：总长 ≈0.77P，杆厚 ≈0.045P，头长 ≈0.26P，头高 ≈0.090P，贴片边。
+      // 真实：总长 ≈0.77P，杆厚 ≈0.042P，头长 ≈0.25P，头高 ≈0.086P，尖头填充。
       var total = step * 0.77;
       var lw = Math.max(1, step * 0.042);
       var head = step * 0.25;
       var half = step * 0.043;
       var left = rightX - total;
       var mid = y;
-      ops.push({ kind: 'line', x1: left, y1: mid, x2: rightX - head * 0.4, y2: mid, color: edgeColor, width: lw });
-      ops.push({ kind: 'line', x1: rightX - head, y1: mid - half, x2: rightX, y2: mid, color: edgeColor, width: lw * 1.25 });
-      ops.push({ kind: 'line', x1: rightX - head, y1: mid + half, x2: rightX, y2: mid, color: edgeColor, width: lw * 1.25 });
-      ops.push({ kind: 'line', x1: rightX - head, y1: mid - half, x2: rightX - head, y2: mid + half, color: edgeColor, width: lw });
+      ops.push({
+        kind: 'path',
+        points: [
+          [left, mid - lw / 2],
+          [rightX - head, mid - lw / 2],
+          [rightX - head, mid - half],
+          [rightX, mid],
+          [rightX - head, mid + half],
+          [rightX - head, mid + lw / 2],
+          [left, mid + lw / 2]
+        ],
+        fill: edgeColor,
+        color: null,
+        width: 0,
+        shadow: false
+      });
     }
 
     function frameStartInfo(raw) {
@@ -1376,13 +1390,12 @@
     for (var k = firstCycle; k < cycles; k++) {
       var base = k * cycleLen;
       var num = ((info.start - 1 + k) % 36 + 36) % 36 + 1;
-      edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.34, step * 0.95,
-        'center', EDGE_NUM_FONT, 700, 0.02);
-      var stockStartHole = Math.min(style.stockHoles[0], lastHole);
-      var stockEndHole = Math.min(style.stockHoles[1], lastHole);
+      edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.31, step * 0.95,
+        'center', EDGE_NUM_FONT, 700, 0.02, 1.35);
+      var stockStartHole = style.stockHoles[0];
+      var stockEndHole = style.stockHoles[1];
       var stockStart = base + holeCenter(stockStartHole) - holeAlong / 2;
       var stockEnd = base + holeCenter(stockEndHole) + holeAlong / 2;
-      if (stockEndHole >= lastHole) stockEnd = Math.min(stockEnd, alongTotal - holeAlong * 0.2);
       if (stockEnd > stockStart) {
         var stockSpan = stockEnd - stockStart;
         var stockTarget = edgeSize * style.stockScale;
@@ -1395,14 +1408,14 @@
       }
 
       var bottomY = bandY(false);
-      edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.39, step * 0.95,
-        'center', EDGE_NUM_FONT, 700, 0.02);
+      edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.35, step * 0.95,
+        'center', EDGE_NUM_FONT, 700, 0.02, 1.35);
       if (style.barcode1) {
         edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.27, false);
       }
-      var aHole = Math.min(style.aHole, lastHole);
+      var aHole = style.aHole;
       edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
-        step * 0.285, step * 0.95, 'center', EDGE_NUM_FONT, 700, 0.01);
+        step * 0.26, step * 0.95, 'center', EDGE_NUM_FONT, 700, 0.01, 1.35);
       if (style.barcode2) {
         edgeBarcode(style.barcode2,
           base + holeCenter(style.aHole) + step * 0.40, false);

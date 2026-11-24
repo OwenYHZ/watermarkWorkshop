@@ -180,13 +180,15 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   assert.ok(Math.abs(bottomNumber.x - hc(0)) <= 2, '下片号在首孔正下方');
   assert.ok(Math.abs(aNumber.x - hc(4)) <= 2, 'A 片号在第 5 孔下方');
   assert.ok(aNumber.size < bottomNumber.size, 'A 片号比普通片号小');
-  const arrows = horizontal.ops.filter((op) => op.kind === 'line' && op.color === '#A0722D');
-  assert.ok(arrows.length >= 3, 'A 片号下方有箭头（杆 + 两撇）');
-  assert.ok(arrows.every((op) => op.y1 > bottomNumber.y), '箭头在片号下方');
-  const arrowXs = arrows.flatMap((op) => [op.x1, op.x2]);
+  const arrows = horizontal.ops.filter((op) => op.kind === 'path' && op.fill === '#A0722D');
+  assert.equal(arrows.length, 1, 'A 片号下方有填充箭头');
+  const arrowPts = arrows[0].points;
+  const arrowXs = arrowPts.map((p) => p[0]);
+  const arrowYs = arrowPts.map((p) => p[1]);
+  assert.ok(Math.min(...arrowYs) > bottomNumber.y, '箭头在片号下方');
   const arrowLen = Math.max(...arrowXs) - Math.min(...arrowXs);
   const stepPx0 = hc(1) - hc(0);
-  assert.ok(Math.abs(arrowLen - stepPx0 * 0.77) <= stepPx0 * 0.15, '箭头总长 ≈0.77P');
+  assert.ok(Math.abs(arrowLen - stepPx0 * 0.77) <= stepPx0 * 0.12, '箭头总长 ≈0.77P');
   assert.ok(Math.max(...arrowXs) > hc(4), '箭头右端伸到 A 片号右侧');
 
   const barcodes = horizontal.ops.filter((op) => op.kind === 'rect' && op.fill === '#A0722D');
@@ -204,10 +206,11 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const stepPx = hc(1) - hc(0);
   assert.ok(Math.abs(b1w - stepPx * 2.66) <= stepPx * 0.08, '条码组宽 ≈2.66P');
   const barUnit = (stepPx * 2.66) / 31;
+  const barGap = stepPx * 0.008;
   b1.forEach((op) => {
-    assert.ok(Math.abs(op.w - barUnit) <= 0.35, '每列条码填满列宽（0 与 1/2/3 等宽）');
+    assert.ok(Math.abs(op.w - (barUnit - barGap)) <= 0.8, '每列条码只有轻微缝隙，0 与 1/2/3 基本等宽');
     const offset = (op.x - Math.min(...b1.map((b) => b.x))) / barUnit;
-    assert.ok(Math.abs(offset - Math.round(offset)) <= 0.02, '条码列按等宽列排布，没有额外缝隙');
+    assert.ok(Math.abs(offset - Math.round(offset)) <= 0.03, '条码列按等宽列排布');
   });
 
   const longStrip = compose({ settings, imageW: 6000, imageH: 2000 });

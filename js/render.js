@@ -53,7 +53,7 @@
     ctx.font = fontString(spec);
     var width = 0;
     chars.forEach(function (ch) { width += ctx.measureText(ch).width; });
-    return width + (spec.tracking || 0) * Math.max(0, chars.length - 1);
+    return (width + (spec.tracking || 0) * Math.max(0, chars.length - 1)) * (spec.scaleX || 1);
   }
 
   function roundedPath(ctx, x, y, w, h, r) {
@@ -164,7 +164,12 @@
     ctx.beginPath();
     ctx.moveTo(points[0][0], points[0][1]);
     for (var i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
-    ctx.stroke();
+    ctx.closePath();
+    if (op.fill) {
+      ctx.fillStyle = op.fill;
+      ctx.fill();
+    }
+    if (op.color && (op.width || 0) > 0) ctx.stroke();
     ctx.restore();
   }
 
@@ -208,18 +213,14 @@
     var offset = 0;
     if (op.align === 'center') offset = -total / 2;
     else if (op.align === 'right') offset = -total;
-    var x = op.x || 0;
-    var y = op.y || 0;
-    if (op.rotation) {
-      ctx.translate(x, y);
-      ctx.rotate(op.rotation);
-      x = 0;
-      y = 0;
-    }
-    x += offset;
+    var scaleX = op.scaleX || 1;
+    ctx.translate(op.x || 0, op.y || 0);
+    if (op.rotation) ctx.rotate(op.rotation);
+    if (scaleX !== 1) ctx.scale(scaleX, 1);
+    var cursor = offset;
     chars.forEach(function (ch) {
-      ctx.fillText(ch, x, y);
-      x += ctx.measureText(ch).width + tracking;
+      ctx.fillText(ch, cursor, 0);
+      cursor += ctx.measureText(ch).width + tracking;
     });
     ctx.restore();
   }
@@ -236,7 +237,7 @@
     var tracking = op.tracking || 0;
     var w = measureText(text, {
       size: size, weight: op.weight, family: op.family, italic: op.italic, tracking: tracking
-    });
+    }) * (op.scaleX || 1);
     var h = size;
     var offset = 0;
     if (op.align === 'center') offset = -w / 2;
