@@ -49,7 +49,7 @@
   var FILM_EDGE_STYLES = {
     portra400: {
       type: 'color-negative',
-      color: '#A0722D',
+      color: '#7E5F28',
       name: 'KODAK PORTRA 400',
       // 第 1 孔出片号，第 9 孔开始下一片号 → 每 8 个孔一个循环。
       cycle: 8,
@@ -1296,7 +1296,7 @@
       }));
     }
 
-    function edgeTextAt(text, x, y, size, maxW, align, family, weight, tracking, scaleX) {
+    function edgeTextAt(text, x, y, size, maxW, align, family, weight, tracking, scaleX, opacity) {
       var font = family || EDGE_FONT;
       var w = weight || 700;
       var trk = tracking == null ? style.tracking : tracking;
@@ -1305,7 +1305,8 @@
       var line = block.lines[0];
       if (!line || line.size < size * 0.42) return;
       // 故意不把两端收进来：贴边处被裁掉一部分才像真实扫描。
-      ops.push(textOp(line.text, x, y, line.size, w, font, edgeColor, edgeOpacity, {
+      ops.push(textOp(line.text, x, y, line.size, w, font, edgeColor,
+        opacity == null ? edgeOpacity : opacity, {
         align: align || 'center',
         shadow: false,
         shadowBlur: 0,
@@ -1338,9 +1339,9 @@
     function edgeArrow(rightX, y) {
       // 真实：总长 ≈0.77P，杆厚 ≈0.042P，头长 ≈0.25P，头高 ≈0.086P，尖头填充。
       var total = step * 0.77;
-      var lw = Math.max(1, step * 0.042);
-      var head = step * 0.25;
-      var half = step * 0.043;
+      var lw = Math.max(1, step * 0.036);
+      var head = step * 0.23;
+      var half = step * 0.038;
       var left = rightX - total;
       var mid = y;
       ops.push({
@@ -1390,8 +1391,8 @@
     for (var k = firstCycle; k < cycles; k++) {
       var base = k * cycleLen;
       var num = ((info.start - 1 + k) % 36 + 36) % 36 + 1;
-      edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.31, step * 0.95,
-        'center', EDGE_NUM_FONT, 700, 0.02, 1.35);
+      edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.26, step * 0.95,
+        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 0.72);
       var stockStartHole = style.stockHoles[0];
       var stockEndHole = style.stockHoles[1];
       var stockStart = base + holeCenter(stockStartHole) - holeAlong / 2;
@@ -1408,14 +1409,14 @@
       }
 
       var bottomY = bandY(false);
-      edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.35, step * 0.95,
-        'center', EDGE_NUM_FONT, 700, 0.02, 1.35);
+      edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.30, step * 0.95,
+        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 0.72);
       if (style.barcode1) {
         edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.27, false);
       }
       var aHole = style.aHole;
       edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
-        step * 0.26, step * 0.95, 'center', EDGE_NUM_FONT, 700, 0.01, 1.35);
+        step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45, 0.72);
       if (style.barcode2) {
         edgeBarcode(style.barcode2,
           base + holeCenter(style.aHole) + step * 0.40, false);
