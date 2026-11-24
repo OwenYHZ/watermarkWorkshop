@@ -49,7 +49,7 @@
   var FILM_EDGE_STYLES = {
     portra400: {
       type: 'color-negative',
-      color: '#7E5F28',
+      color: '#F5A623',
       name: 'KODAK PORTRA 400',
       // 第 1 孔出片号，第 9 孔开始下一片号 → 每 8 个孔一个循环。
       cycle: 8,
@@ -1321,7 +1321,6 @@
     function edgeBarcode(pattern, startX, top) {
       if (!pattern) return;
       var unit = (step * 2.66) / pattern.length;
-      var gap = Math.max(0.5, step * 0.008);
       var bandTop = top ? 0 : F - outerBand;
       var bandH = outerBand;
       for (var idx = 0; idx < pattern.length; idx++) {
@@ -1330,7 +1329,7 @@
         var h = code === '3' ? bandH : code === '2' ? bandH * 0.59 : bandH * 0.41;
         var y = code === '1' ? bandTop + bandH - h : bandTop;
         ops.push({
-          kind: 'rect', x: startX + idx * unit + gap / 2, y: y, w: Math.max(0.5, unit - gap), h: h,
+          kind: 'rect', x: startX + idx * unit, y: y, w: unit, h: h,
           radius: 0, fill: edgeColor, stroke: null, shadow: false
         });
       }
@@ -1392,7 +1391,7 @@
       var base = k * cycleLen;
       var num = ((info.start - 1 + k) % 36 + 36) % 36 + 1;
       edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.26, step * 0.95,
-        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 0.72);
+        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 1);
       var stockStartHole = style.stockHoles[0];
       var stockEndHole = style.stockHoles[1];
       var stockStart = base + holeCenter(stockStartHole) - holeAlong / 2;
@@ -1410,13 +1409,13 @@
 
       var bottomY = bandY(false);
       edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.30, step * 0.95,
-        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 0.72);
+        'center', EDGE_NUM_FONT, 600, 0.02, 1.45, 1);
       if (style.barcode1) {
         edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.27, false);
       }
       var aHole = style.aHole;
       edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
-        step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45, 0.72);
+        step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45, 1);
       if (style.barcode2) {
         edgeBarcode(style.barcode2,
           base + holeCenter(style.aHole) + step * 0.40, false);

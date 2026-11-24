@@ -250,7 +250,7 @@
       log(filmTexts.filter(function (op) { return op.text === 'KODAK PORTRA 400'; }).length === 1,
         '单格内胶卷型号出现一次（长图才重复）');
       var filmBars = filmScene.ops.filter(function (op) {
-        return op.kind === 'rect' && op.fill === '#7E5F28';
+        return op.kind === 'rect' && op.fill === '#F5A623';
       });
       log(filmBars.length >= 20, '两段真实条码存在');
       log(!!filmTexts.filter(function (op) { return op.text === '12'; })[0] &&
