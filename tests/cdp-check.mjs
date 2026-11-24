@@ -1051,7 +1051,18 @@ async function main() {
           text: op.text, color: op.color, blur: op.shadowBlur
         }))
       };
-      result.film.stockCount = result.film.texts.filter((t) => t.text === 'PORTRA 400').length;
+      result.film.stockCount = result.film.texts.filter((t) => t.text === 'KODAK PORTRA 400').length;
+      const stockSelect = () => document.querySelector('#controls select[data-path="film.stockId"]');
+      result.film.stockOptions = stockSelect()
+        ? Array.from(stockSelect().options).map((o) => o.textContent) : [];
+      clickSeg('film.type', 'bw-negative');
+      await sleep(380);
+      result.film.bwStock = {
+        value: WM.ui.settings.film.stockId,
+        options: stockSelect() ? Array.from(stockSelect().options).map((o) => o.textContent) : []
+      };
+      clickSeg('film.type', 'color-negative');
+      await sleep(380);
       result.film.labels = result.film.texts.filter((t) => t.text === '12' || t.text === '12A').map((t) => t.text);
       selectValue('film.holeColor', 'black');
       await sleep(350);
@@ -1108,6 +1119,7 @@ async function main() {
           return vHoles.some((h) => b.x0 < h.x + h.w && b.x1 > h.x && b.y0 < h.y + h.h && b.y1 > h.y);
         }).map((op) => op.text),
         outside: vTexts.filter((op) => {
+          if (!(op.shadowBlur > 0)) return false; // 边字允许被裁切，只有打印内容必须完整
           const b = WM.render.textBounds(op);
           return b.x0 < -1 || b.y0 < -1 || b.x1 > vFilm.output.w + 1 || b.y1 > vFilm.output.h + 1;
         }).map((op) => op.text)
@@ -1367,7 +1379,7 @@ async function main() {
       !/url\(/i.test(style.backgroundImage || '') &&
       parseFloat(style.paddingRight) >= 34;
     const filmTexts = result.film ? result.film.texts : [];
-    const stock = filmTexts.find((t) => t.text === 'PORTRA 400');
+    const stock = filmTexts.find((t) => t.text === 'KODAK PORTRA 400');
     const printItem = filmTexts.find((t) => t.text === (result.film && result.film.pentaxMode ? result.film.pentaxMode : 'P'));
     const healthy = styleHealthy &&
       result.dateToggle && result.dateOff && result.dateOff.value === false && result.dateOff.changed &&
@@ -1380,7 +1392,10 @@ async function main() {
       result.bottomBar.afterLeft && result.bottomBar.afterLeft.logoX > result.bottomBar.afterLeft.lineX &&
       result.bottomBar.noLogoLine === false &&
       result.film && result.film.background === '#0B0B0B' && result.film.holes >= 8 &&
-      result.film.holeShapeOk && result.film.stockCount === 1 &&
+      result.film.holeShapeOk && result.film.stockCount >= 2 &&
+      result.film.stockOptions.join(',') === 'KODAK PORTRA 400' &&
+      result.film.bwStock && result.film.bwStock.value === 'hp5' &&
+      result.film.bwStock.options.join(',') === 'ILFORD HP5 PLUS 400' &&
       result.film.labels.indexOf('12') >= 0 && result.film.labels.indexOf('12A') >= 0 &&
       result.film.blackHoles >= 8 &&
       result.film.pentaxFields.every((t) => filmTexts.some((op) => op.text === t)) &&

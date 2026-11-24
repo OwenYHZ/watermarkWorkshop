@@ -151,13 +151,21 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
 
   const texts = horizontal.ops.filter((op) => op.kind === 'text');
   const textOf = (value) => texts.find((op) => op.text === value);
-  const stock = textOf('PORTRA 400');
+  const stock = textOf('KODAK PORTRA 400');
   assert.ok(stock, '原有胶卷型号存在');
   assert.equal(stock.color, '#FFB000');
   assert.equal(stock.shadowBlur, 0, '原有边字无光晕');
   assert.ok(stock.y < top[0].y, '原有边字在齿孔外侧');
-  assert.equal(texts.filter((op) => op.text === 'PORTRA 400').length, 1, '胶卷型号只出现一次');
+  assert.ok(texts.filter((op) => op.text === 'KODAK PORTRA 400').length >= 2,
+    '胶卷型号沿片长重复出现，而不是只出现一次');
+  const barcodes = horizontal.ops.filter((op) => op.kind === 'rect' &&
+    op.fill && String(op.fill).indexOf('255, 176, 0') >= 0);
+  assert.ok(barcodes.length >= 8, '真实边码条码存在');
   assert.ok(textOf('12') && textOf('12A'), '片号按间隔生成 12, 12A');
+  const longStrip = compose({ settings, imageW: 6000, imageH: 2000 });
+  const longTexts = longStrip.ops.filter((op) => op.kind === 'text').map((op) => op.text);
+  assert.ok(longTexts.includes('13'), '长片上的片号递增');
+  assert.ok(longTexts.filter((t) => t === 'KODAK PORTRA 400').length >= 4, '长片上胶卷名与条码重复');
   ['P', '±0.0', '400', '250', 'F2.8'].forEach((value) => {
     const item = textOf(value);
     assert.ok(item, 'Pentax 打印 ' + value);
@@ -170,6 +178,25 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const blackHoles = compose({ settings });
   assert.ok(blackHoles.ops.some((op) => op.kind === 'rect' && op.fill === '#000000'));
   settings.film.holeColor = 'white';
+
+  // 打印字号/透明度只影响打印内容，不影响胶片原有边字
+  settings.film.textSize = 60;
+  settings.film.textOpacity = 0.35;
+  const bigPrint = compose({ settings });
+  const bigTexts = bigPrint.ops.filter((op) => op.kind === 'text');
+  const bigEdge = bigTexts.find((op) => op.text === 'KODAK PORTRA 400');
+  assert.equal(bigEdge.size, stock.size, '边字字号不随打印字号变化');
+  assert.equal(bigEdge.color, stock.color, '边字颜色/不透明度不随打印透明度变化');
+  const bigPrintItem = bigTexts.find((op) => op.shadowBlur > 0);
+  const basePrintItem = texts.find((op) => op.shadowBlur > 0);
+  assert.ok(bigPrintItem.size > basePrintItem.size, '打印内容字号可调');
+  settings.film.textSize = 24;
+  settings.film.textOpacity = 1;
+
+  assert.deepEqual(state.filmStockOptions('color-negative').map((x) => x.id), ['portra400']);
+  assert.deepEqual(state.filmStockOptions('bw-negative').map((x) => x.id), ['hp5']);
+  assert.equal(state.sanitize({ film: { type: 'bw-negative' } }).film.stockId, 'hp5');
+  assert.equal(state.sanitize({ film: { type: 'bw-negative', stock: 'HP5 PLUS' } }).film.stockId, 'hp5', '旧型号迁移');
 
   settings.film.printStyle = 'minolta';
   const minolta = compose({ settings });
@@ -278,9 +305,13 @@ test('胶片：竖向齿孔整幅旋转，文字不压齿孔', () => {
           box.y0 < hole.y + hole.h && box.y1 > hole.y;
         assert.ok(!hit, style + '：文字「' + op.text + '」不应压在齿孔上');
       });
-      assert.ok(box.x0 >= -1 && box.y0 >= -1 &&
-        box.x1 <= scene.output.w + 1 && box.y1 <= scene.output.h + 1,
-        style + '：文字「' + op.text + '」应在画布内');
+      // 胶片原有边字允许在两端被裁切（真实扫描就是这样）；
+      // 只有带光晕的「打印内容」必须完整落在画布内。
+      if (op.shadowBlur > 0) {
+        assert.ok(box.x0 >= -1 && box.y0 >= -1 &&
+          box.x1 <= scene.output.w + 1 && box.y1 <= scene.output.h + 1,
+          style + '：打印文字「' + op.text + '」应在画布内');
+      }
     });
   });
 

@@ -40,6 +40,12 @@
     }
   };
 
+  // 胶卷边字的外观（与 state.js 的 FILM_STOCKS 一一对应，新增型号时两处一起加）。
+  var FILM_STOCKS = {
+    portra400: { type: 'color-negative', name: 'KODAK PORTRA 400', edge: '#FFB000', number: '#F2E6CC' },
+    hp5: { type: 'bw-negative', name: 'ILFORD HP5 PLUS 400', edge: '#F4F4F4', number: '#F4F4F4' }
+  };
+
   // DV 的 OSD 固定白色（真实摄像机 OSD 只有白色），不再提供调色。
   var DV_OSD_COLOR = '#FFFFFF';
 
@@ -203,7 +209,7 @@
         orientation: film.orientation || 'horizontal',
         holeColor: film.holeColor || 'white',
         printStyle: film.printStyle || 'pentax',
-        stock: film.stock || '',
+        stockId: film.stockId || (film.type === 'bw-negative' ? 'hp5' : 'portra400'),
         frameNo: film.frameNo || '12',
         textSize: num(film.textSize, 24),
         textOpacity: num(film.textOpacity, 1)
@@ -1162,9 +1168,16 @@
     var imgH = acrossDim;
     var ops = [];
 
-    var edgeColor = s.film.type === 'bw-negative' ? '#F4F4F4' : '#FFB000';
+    var stockInfo = FILM_STOCKS[s.film.stockId];
+    if (!stockInfo || stockInfo.type !== s.film.type) {
+      stockInfo = FILM_STOCKS[s.film.type === 'bw-negative' ? 'hp5' : 'portra400'];
+    }
+    var edgeColor = stockInfo.edge;
+    var numberColor = stockInfo.number;
     var printColor = edgeColor;
-    var edgeOpacity = s.film.textOpacity;
+    // 胶片原有边字固定字号/不透明度；打印字号与透明度只影响下面的打印内容。
+    var edgeOpacity = 1;
+    var printOpacity = s.film.textOpacity;
     var holeFill = s.film.holeColor === 'black' ? '#000000' : '#F4F1E8';
     var hairline = Math.max(1, mm * 0.03);
     var holeStroke = s.film.holeColor === 'black'
@@ -1196,25 +1209,20 @@
       });
     }
 
-    // 字号只跟 24mm 画幅高成比例（filmAcross = 35mm 恒定）：
-    // 同一张照片无论宽多少，打印字都一样大。
-    var edgeSize = Math.max(0.15 * mm, Math.min(s.film.textSize * filmAcross / 1000, border * 0.34));
-    var printSize = Math.max(0.15 * mm, Math.min(edgeSize * 0.95, holeAcross * 0.45));
+    // 边字字号只由 35mm 片宽决定，下面的打印字号只跟 24mm 画幅高有关。
+    var edgeSize = Math.max(0.10 * mm, border * 0.22);
+    var printSize = Math.max(0.15 * mm, Math.min(s.film.textSize * filmAcross / 1000, holeAcross * 0.45));
     var outerBand = Math.max(1, border - innerGap - holeAcross);
     var outerCenter = outerBand / 2;
 
-    function bandPosition(alongCoord) {
-      return { x: alongCoord, y: outerCenter, rotation: 0 };
+    function bandY(top) {
+      return top ? outerCenter : F - outerCenter;
     }
 
-    function gapPosition(alongCoord) {
-      return { x: alongCoord, y: topHoleCenter, rotation: 0 };
-    }
-
-    function fitFilmLine(text, size, maxW) {
+    function fitFilmLine(text, size, maxW, weight, tracking) {
       if (!text) return null;
-      var block = fitBlock([{ text: text, size: size, weight: 600, opacity: 1 }],
-        maxW, FAMILIES.mono, 1, measure, 0.12);
+      var block = fitBlock([{ text: text, size: size, weight: weight || 600, opacity: 1 }],
+        maxW, FAMILIES.mono, 1, measure, tracking == null ? 0.12 : tracking);
       var line = block.lines[0];
       return line && line.size >= size * 0.45 ? line : null;
     }
@@ -1231,18 +1239,44 @@
       }));
     }
 
+    function edgeText(text, along, top, size, color, maxW) {
+      if (!text) return;
+      var line = fitFilmLine(text, size, maxW || Math.max(step * 1.2, alongTotal * 0.9), 700, 0.1);
+      if (!line) return;
+      // 故意不把两端收进来：贴边处被裁掉一部分才像真实扫描。
+      ops.push(textOp(line.text, along, bandY(top), line.size, 700, FAMILIES.mono, color, edgeOpacity, {
+        align: 'center',
+        shadow: false,
+        shadowBlur: 0,
+        tracking: line.size * 0.1,
+        rotation: 0
+      }));
+    }
+
+    function edgeBarcode(centerAlong, top) {
+      var unit = Math.max(0.045 * mm, mm * 0.045);
+      var pattern = [1, 2, 1, 3, 1, 1, 2, 1, 3, 2, 1, 2];
+      var total = 0;
+      pattern.forEach(function (w) { total += w * unit; });
+      total += (pattern.length - 1) * unit * 0.7;
+      var x = centerAlong - total / 2;
+      var fullH = outerBand * 0.82;
+      var shortH = fullH * 0.62;
+      var bandCenter = bandY(top);
+      pattern.forEach(function (w, idx) {
+        var h = idx % 3 === 0 || idx % 5 === 0 ? fullH : shortH;
+        ops.push({
+          kind: 'rect', x: x, y: bandCenter - h / 2, w: w * unit, h: h,
+          radius: 0, fill: rgba(edgeColor, edgeOpacity), stroke: null, shadow: false
+        });
+        x += w * unit + unit * 0.7;
+      });
+    }
+
     function frameStartInfo(raw) {
       var text = String(raw == null ? '' : raw).trim();
       var match = text.match(/(\d+)/);
-      return {
-        start: match ? parseInt(match[1], 10) : 12,
-        offset: /a\s*$/i.test(text) ? 1 : 0
-      };
-    }
-
-    function frameLabelAt(info, index) {
-      var num = info.start + Math.floor((info.offset + index) / 2);
-      return (info.offset + index) % 2 === 1 ? num + 'A' : String(num);
+      return { start: match ? parseInt(match[1], 10) : 12 };
     }
 
     function numericIso() {
@@ -1257,82 +1291,72 @@
       return 'F' + raw.replace(/^f\s*\/?\s*/i, '');
     }
 
-    var stock = String(s.film.stock || '').trim() || pal.stockShort;
+    // 真实 135 边字：每 8 个孔（一格）重复「片号 / 片号A / 胶卷名×2 / 条码×2」，
+    // 超长片会不断递增/重复；两端故意允许被裁切。
     var info = frameStartInfo(s.film.frameNo);
-    var labelIndex = 0;
-    var stockLine = null;
-    var stockLeft = null;
+    var baseBlock = step * 8;
+    var blocks = Math.max(1, Math.round(alongTotal / baseBlock));
+    var cell = alongTotal / blocks;
+    for (var b = 0; b < blocks; b++) {
+      var base = b * cell;
+      var num = ((info.start - 1 + b) % 36 + 36) % 36 + 1;
+      // 一格内：片号 / 片号A / 胶卷名×2 / 条码×2，错位排布。
+      edgeText(String(num), base + cell * 0.10, true, edgeSize, numberColor, cell * 0.16);
+      edgeText(String(num) + 'A', base + cell * 0.20, false, edgeSize, numberColor, cell * 0.18);
+      edgeText(stockInfo.name, base + cell * 0.50, true, edgeSize * 0.92, edgeColor, cell * 0.55);
+      edgeText(stockInfo.name, base + cell * 0.60, false, edgeSize * 0.92, edgeColor, cell * 0.55);
+      edgeBarcode(base + cell * 0.88, true);
+      edgeBarcode(base + cell * 0.92, false);
+    }
 
-    {
-      // 原有边字：胶卷型号只出现一次，片号固定每 4 孔出现。
-      stockLine = fitFilmLine(stock, edgeSize, Math.min(alongTotal * 0.46, pitch * 4.2));
-      if (stockLine) {
-        var stockCenterAlong = alongTotal - stockLine.w / 2 - step * 0.06;
-        stockLeft = stockCenterAlong - stockLine.w / 2;
-        var stockPos = bandPosition(stockCenterAlong);
-        pushFilmText(stockLine.text, stockPos.x, stockPos.y, stockLine.size,
-          edgeColor, edgeOpacity, stockPos.rotation, false, 'center');
-      }
-      for (var li = 0; li < n; li += 4) {
-        var label = frameLabelAt(info, labelIndex++);
-        var labelLine = fitFilmLine(label, edgeSize, Math.max(0.25 * mm, step * 1.15));
-        if (!labelLine) continue;
-        var labelCenter = (li + 0.5) * step;
-        if (stockLeft != null && labelCenter + labelLine.w / 2 > stockLeft - step * 0.1) continue;
-        var labelPos = bandPosition(labelCenter);
-        pushFilmText(labelLine.text, labelPos.x, labelPos.y, labelLine.size,
-          edgeColor, edgeOpacity, labelPos.rotation, false, 'center');
-      }
-
-      if (s.film.printStyle !== 'none') {
-        if (s.film.printStyle === 'pentax') {
-          // Pentax MZS：上侧每个齿孔间隙一个字段，顺序固定。
-          var gapWidth = Math.max(0.15 * mm, step - holeAlong);
-          var pentaxFields = [
-            tokens.meta.exposureModeText || 'P',
-            tokens.meta.exposureCompText || '±0.0',
-            numericIso(),
-            numericShutter(),
-            apertureText()
-          ];
-          pentaxFields.forEach(function (text, slot) {
-            if (!text || slot >= n - 1) return;
-            var line = fitFilmLine(text, printSize, gapWidth * 0.92);
-            if (!line) return;
-            var pos = gapPosition((slot + 1) * step);
-            pushFilmText(line.text, pos.x, pos.y, line.size, printColor, edgeOpacity,
-              pos.rotation, true, 'center');
-          });
-        } else if (s.film.printStyle === 'minolta') {
-          // Minolta α9000：拍摄参数竖排、紧贴画幅右缘、垂直居中。
-          var minoltaText = [
-            tokens.meta.focalText,
-            apertureText(),
-            numericShutter(),
-            numericIso() ? 'ISO' + numericIso() : ''
-          ].filter(Boolean).join(' ');
-          var minoltaLine = fitFilmLine(minoltaText, printSize, imgH * 0.9);
-          if (minoltaLine) {
-            var minoltaGap = 0.35 * mm;
-            pushFilmText(minoltaLine.text,
-              imgX + imgW - minoltaGap - minoltaLine.size / 2,
-              imgY + imgH / 2,
-              minoltaLine.size, printColor, edgeOpacity, -Math.PI / 2, true, 'center');
-          }
-        } else if (s.film.printStyle === 'canon-date') {
-          // Canon Prima 80u：右下角 'YY MM DD。
-          var d = tokens.meta.date;
-          if (d) {
-            var dateText = "'" + String(d.y).slice(-2) + ' ' + pad2(d.m) + ' ' + pad2(d.d);
-            var dateLine = fitFilmLine(dateText, printSize * 1.05, imgW * 0.45);
-            if (dateLine) {
-              var dateGapX = 3.2 * mm;
-              var dateGapY = 1.8 * mm;
-              pushFilmText(dateLine.text,
-                imgX + imgW - dateGapX,
-                imgY + imgH - dateGapY,
-                dateLine.size, printColor, edgeOpacity, 0, true, 'right');
-            }
+    if (s.film.printStyle !== 'none') {
+      if (s.film.printStyle === 'pentax') {
+        // Pentax MZS：上侧每个齿孔间隙一个字段，顺序固定。
+        var gapWidth = Math.max(0.15 * mm, step - holeAlong);
+        var pentaxFields = [
+          tokens.meta.exposureModeText || 'P',
+          tokens.meta.exposureCompText || '±0.0',
+          numericIso(),
+          numericShutter(),
+          apertureText()
+        ];
+        pentaxFields.forEach(function (text, slot) {
+          if (!text || slot >= n - 1) return;
+          var line = fitFilmLine(text, printSize, gapWidth * 0.92);
+          if (!line) return;
+          var pos = { x: (slot + 1) * step, y: topHoleCenter, rotation: 0 };
+          pushFilmText(line.text, pos.x, pos.y, line.size, printColor, printOpacity,
+            pos.rotation, true, 'center');
+        });
+      } else if (s.film.printStyle === 'minolta') {
+        // Minolta α9000：拍摄参数竖排、紧贴画幅右缘、垂直居中。
+        var minoltaText = [
+          tokens.meta.focalText,
+          apertureText(),
+          numericShutter(),
+          numericIso() ? 'ISO' + numericIso() : ''
+        ].filter(Boolean).join(' ');
+        var minoltaLine = fitFilmLine(minoltaText, printSize, imgH * 0.9);
+        if (minoltaLine) {
+          var minoltaGap = 0.35 * mm;
+          pushFilmText(minoltaLine.text,
+            imgX + imgW - minoltaGap - minoltaLine.size / 2,
+            imgY + imgH / 2,
+            minoltaLine.size, printColor, printOpacity, -Math.PI / 2, true, 'center');
+        }
+      } else if (s.film.printStyle === 'canon-date') {
+        // Canon Prima 80u：右下角 'YY MM DD。
+        var d = tokens.meta.date;
+        if (d) {
+          var dateText = "'" + String(d.y).slice(-2) + ' ' + pad2(d.m) + ' ' + pad2(d.d);
+          var dateLine = fitFilmLine(dateText, printSize * 1.05, imgW * 0.45);
+          if (dateLine) {
+            var dateGapX = 3.2 * mm;
+            var dateGapY = 1.8 * mm;
+            pushFilmText(dateLine.text,
+              imgX + imgW - dateGapX,
+              imgY + imgH - dateGapY,
+              dateLine.size, printColor, printOpacity, 0, true, 'right');
           }
         }
       }

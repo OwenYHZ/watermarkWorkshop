@@ -1287,6 +1287,7 @@
       id: 'film', title: '胶片样式', open: true, templates: ['film-frame'],
       controls: [
         { type: 'seg', label: '底片类型', path: 'film.type', options: state.FILM_TYPES },
+        { type: 'select', label: '胶卷', path: 'film.stockId', options: 'filmStocks' },
         { type: 'seg', label: '齿孔方向', path: 'film.orientation', options: state.FILM_ORIENTATIONS },
         { type: 'select', label: '齿孔颜色', path: 'film.holeColor', options: state.FILM_HOLE_COLORS }
       ]
@@ -1295,7 +1296,6 @@
       id: 'filmPrint', title: '打印内容', open: true, templates: ['film-frame'],
       controls: [
         { type: 'select', label: '打印风格', path: 'film.printStyle', options: state.FILM_PRINT_STYLES },
-        { type: 'text', label: '胶卷型号', path: 'film.stock' },
         { type: 'text', label: '片号起点', path: 'film.frameNo' },
         { type: 'range', label: '打印字号', path: 'film.textSize', min: 8, max: 60, step: 0.5, unit: '‰胶片宽' },
         { type: 'range', label: '打印透明度', path: 'film.textOpacity', min: 0.35, max: 1, step: 0.01 }
@@ -1828,6 +1828,10 @@
         var raw = getPath(settings, path);
         var value = typeof raw === 'number' ? Number(opt.value) : opt.value;
         setPath(settings, path, value);
+        if (path === 'film.type') {
+          settings.film.stockId = state.defaultFilmStockId(value);
+          refreshControls();
+        }
         buttons.forEach(function (b) { b.classList.toggle('active', b.dataset.value === String(value)); });
         refreshConditions();
         saveAndPreview();
@@ -1853,7 +1857,9 @@
     var shell = el('div', 'select-shell');
     shell.appendChild(select);
     row.wrap.appendChild(shell);
-    var kind = ctrl.options === 'brands' ? 'brands' : ctrl.options === 'logos' ? 'logos' : 'static';
+    var kind = ctrl.options === 'brands' ? 'brands'
+      : ctrl.options === 'logos' ? 'logos'
+        : ctrl.options === 'filmStocks' ? 'filmStocks' : 'static';
     function fill() {
       var previous = select.value;
       select.textContent = '';
@@ -1866,6 +1872,13 @@
           var opt = document.createElement('option');
           opt.value = b.id;
           opt.textContent = b.name + '（' + b.group + '）';
+          select.appendChild(opt);
+        });
+      } else if (kind === 'filmStocks') {
+        state.filmStockOptions(settings.film.type).forEach(function (x) {
+          var opt = document.createElement('option');
+          opt.value = x.id;
+          opt.textContent = x.label;
           select.appendChild(opt);
         });
       } else if (kind === 'logos') {
@@ -1902,9 +1915,13 @@
       saveAndPreview();
     });
     register(ctrl, row.wrap, function () {
-      if (kind === 'logos') fill();
+      if (kind === 'logos' || kind === 'filmStocks') fill();
       var v = getPath(settings, ctrl.path);
       if (kind === 'logos' && !app.logos.length) v = '';
+      if (kind === 'filmStocks') {
+        var ids = state.filmStockOptions(settings.film.type).map(function (x) { return x.id; });
+        if (ids.indexOf(v) < 0) v = ids[0] || '';
+      }
       select.value = v == null ? '' : String(v);
       if (kind === 'logos' && !select.value && app.logos.length) {
         select.value = app.logos[0].id;

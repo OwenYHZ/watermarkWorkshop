@@ -238,7 +238,7 @@
       log(filmHoles.length >= 8, '胶片白色齿孔排布');
       log(filmHoles.length && filmHoles.every(function (op) { return op.w < op.h; }), '横向胶片孔为竖向长孔');
       var filmTexts = filmScene.ops.filter(function (op) { return op.kind === 'text'; });
-      var stockText = filmTexts.filter(function (op) { return op.text === 'PORTRA 400'; })[0];
+      var stockText = filmTexts.filter(function (op) { return op.text === 'KODAK PORTRA 400'; })[0];
       var expectedMode = canonSummary.exposureModeText || 'P';
       var expectedComp = canonSummary.exposureCompText || '±0.0';
       var printText = filmTexts.filter(function (op) { return op.text === expectedMode; })[0];
@@ -247,7 +247,12 @@
       var pentaxItems = [expectedMode, expectedComp, '400', '250', 'F2.8'];
       log(pentaxItems.every(function (t) { return !!filmTexts.filter(function (op) { return op.text === t; })[0]; }),
         'Pentax 孔间打印档位/曝光补偿/ISO/快门/光圈');
-      log(filmTexts.filter(function (op) { return op.text === 'PORTRA 400'; }).length === 1, '胶卷型号只出现一次');
+      log(filmTexts.filter(function (op) { return op.text === 'KODAK PORTRA 400'; }).length >= 2,
+        '胶卷型号沿片长重复出现');
+      var filmBars = filmScene.ops.filter(function (op) {
+        return op.kind === 'rect' && op.fill && String(op.fill).indexOf('255, 176, 0') >= 0;
+      });
+      log(filmBars.length >= 8, '边码条码存在');
       log(!!filmTexts.filter(function (op) { return op.text === '12'; })[0] &&
         !!filmTexts.filter(function (op) { return op.text === '12A'; })[0], '片号按间隔出现 12/12A');
 

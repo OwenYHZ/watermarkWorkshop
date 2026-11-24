@@ -96,7 +96,7 @@
       orientation: 'horizontal',
       holeColor: 'white',
       printStyle: 'pentax',
-      stock: '',
+      stockId: 'portra400',
       frameNo: '12',
       textSize: 24,
       textOpacity: 1
@@ -176,9 +176,31 @@
   ];
 
   var FILM_HOLE_COLORS = [
-    { value: 'white', label: '白色（参考图）' },
+    { value: 'white', label: '白色' },
     { value: 'black', label: '黑色' }
   ];
+
+  // 胶卷型号：按底片类型分组，方便以后继续加型号。
+  var FILM_STOCKS = [
+    { id: 'portra400', type: 'color-negative', label: 'KODAK PORTRA 400' },
+    { id: 'hp5', type: 'bw-negative', label: 'ILFORD HP5 PLUS 400' }
+  ];
+
+  function filmStockOptions(type) {
+    return FILM_STOCKS.filter(function (x) { return x.type === type; });
+  }
+
+  function defaultFilmStockId(type) {
+    var list = filmStockOptions(type);
+    return list.length ? list[0].id : '';
+  }
+
+  function filmStockById(id) {
+    for (var i = 0; i < FILM_STOCKS.length; i++) {
+      if (FILM_STOCKS[i].id === id) return FILM_STOCKS[i];
+    }
+    return null;
+  }
 
   var FILM_PRINT_STYLES = [
     { value: 'none', label: '无打印' },
@@ -371,6 +393,12 @@
     if (next.film && typeof next.film === 'object') {
       if (next.film.type === 'reversal') next.film.type = 'color-negative';
       if (next.film.orientation === 'auto') next.film.orientation = 'horizontal';
+      if (next.film.stock !== undefined) {
+        var legacyStock = String(next.film.stock || '').toUpperCase();
+        if (legacyStock.indexOf('HP5') >= 0) next.film.stockId = 'hp5';
+        else if (legacyStock.indexOf('PORTRA') >= 0) next.film.stockId = 'portra400';
+        delete next.film.stock;
+      }
       if (next.film.printStyle === undefined && next.film.textMode !== undefined) {
         if (next.film.textMode === 'none') next.film.printStyle = 'none';
         else if (next.film.textMode === 'edge') next.film.printStyle = 'pentax';
@@ -412,6 +440,8 @@
     if (['horizontal', 'vertical'].indexOf(s.film.orientation) < 0) s.film.orientation = 'horizontal';
     if (!inOptions(FILM_HOLE_COLORS, s.film.holeColor)) s.film.holeColor = 'white';
     if (!inOptions(FILM_PRINT_STYLES, s.film.printStyle)) s.film.printStyle = 'pentax';
+    var stockIds = filmStockOptions(s.film.type).map(function (x) { return x.id; });
+    if (stockIds.indexOf(s.film.stockId) < 0) s.film.stockId = stockIds[0] || '';
     if (!inOptions(DV_RESOLUTIONS, s.dv.resolutionLabel)) s.dv.resolutionLabel = '4K';
     if (!inOptions(DV_FOCUS_STYLES, s.dv.centerFocus)) s.dv.centerFocus = 'square';
     if (!inOptions(DV_EXPOSURE_POSITIONS, s.dv.exposurePosition)) s.dv.exposurePosition = 'left';
@@ -676,6 +706,10 @@
     FILM_TYPES: FILM_TYPES,
     FILM_HOLE_COLORS: FILM_HOLE_COLORS,
     FILM_PRINT_STYLES: FILM_PRINT_STYLES,
+    FILM_STOCKS: FILM_STOCKS,
+    filmStockOptions: filmStockOptions,
+    defaultFilmStockId: defaultFilmStockId,
+    filmStockById: filmStockById,
     FILM_ORIENTATIONS: FILM_ORIENTATIONS,
     DV_RESOLUTIONS: DV_RESOLUTIONS,
     DV_FOCUS_STYLES: DV_FOCUS_STYLES,
