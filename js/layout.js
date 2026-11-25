@@ -91,11 +91,11 @@
       aScale: 0.9,
       stockScale: 1,
       tracking: 0.12,
-      barcode1: hp5Barcode(7),
-      barcode2: hp5Barcode(31),
+      barcode1: '2231111012332101011222300001032',
+      barcode2: '3111111333210101132223010011322',
       barcodeSpan: 2.6,
       barcodeOffset: 0.75,
-      numberPixel: 0.05
+      numberPixel: 0.06
     }
   };
 
