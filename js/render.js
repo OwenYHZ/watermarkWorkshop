@@ -164,7 +164,9 @@
     ctx.beginPath();
     ctx.moveTo(points[0][0], points[0][1]);
     for (var i = 1; i < points.length; i++) ctx.lineTo(points[i][0], points[i][1]);
-    ctx.closePath();
+    // 只有填充（箭头）或显式 close 才闭合；DV 取景框的 L 形折线必须保持开口，
+    // 否则会被 closePath 连成三角形。
+    if (op.fill || op.close) ctx.closePath();
     if (op.fill) {
       ctx.fillStyle = op.fill;
       ctx.fill();

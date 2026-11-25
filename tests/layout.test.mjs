@@ -403,7 +403,12 @@ test('DV 界面：REC、电池、时间码与对焦框', () => {
   assert.ok(texts.includes('AUTO'));
   assert.ok(texts.includes('78%'));
   assert.ok(scene.ops.some((op) => op.kind === 'rect' && op.fill === '#FF3B30'));
-  assert.equal(scene.ops.filter((op) => op.kind === 'path').length, 4, '取景框四角各一条折线');
+  const dvFrame = scene.ops.filter((op) => op.kind === 'path');
+  assert.equal(dvFrame.length, 4, '取景框四角各一条折线');
+  dvFrame.forEach((op) => {
+    assert.equal(op.points.length, 3, '每个角是开口 L 形折线，不能被闭合成三角形');
+    assert.ok(!op.fill, '取景框只描边、不填充');
+  });
   assert.ok(scene.ops.filter((op) => op.kind === 'line').length >= 6, '曝光标尺轴线与 5 个刻度');
   settings.dv.rec = false;
   settings.dv.battery = false;
