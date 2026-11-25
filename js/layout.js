@@ -91,9 +91,9 @@
       aScale: 0.9,
       stockScale: 1,
       tracking: 0.12,
-      barcode1: '3332033233320332333203323',
-      barcode2: '3323332033233203332332033',
-      barcodeSpan: 1.8,
+      barcode1: hp5Barcode(7),
+      barcode2: hp5Barcode(31),
+      barcodeSpan: 2.6,
       barcodeOffset: 0.75,
       numberPixel: 0.05
     }
@@ -1531,7 +1531,7 @@
         ? (step * (style.barcodeSpan || 2.66)) / style.barcode1.length : step * 0.1;
       var bandTopY = F - outerBand - bcUnit * 0.7;
       var numPx = step * (style.numberPixel || 0.037);
-      var pixelY = bandTopY + 2.2 * numPx;
+      var pixelY = bandTopY + 3.5 * numPx;
       if (style.pixel) {
         pixelText(String(num), base + holeCenter(0), pixelY, numPx, numPaint, 'center');
       } else {
