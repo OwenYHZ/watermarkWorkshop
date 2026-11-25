@@ -1346,12 +1346,13 @@
           runs.push({ kind: kind, start: idx, end: idx });
         }
       }
+      var bleed = Math.max(2, step * 0.012);
       runs.forEach(function (run) {
         if (!run) return;
-        // 上下两段在 mid 处相接：各向外多盖 1px，避免交界处漏出细亮线。
-        var y = run.kind === 'lower' ? mid - 1 : bandTop;
-        var h = run.kind === 'lower' ? F - mid + 1
-          : run.kind === 'all' ? F - bandTop : mid - bandTop + 1;
+        // 遮罩色与片基相同：上下边缘多盖一截，保证不会在条码顶/底漏出黄线。
+        var y = run.kind === 'lower' ? mid - 1 : bandTop - bleed;
+        var h = run.kind === 'lower' ? F - mid + 1 + bleed
+          : run.kind === 'all' ? F - bandTop + bleed * 2 : mid - bandTop + bleed + 1;
         var x = startX + run.start * unit;
         var w = (run.end - run.start + 1) * unit;
         ops.push({

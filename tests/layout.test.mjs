@@ -219,8 +219,11 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const unitPx = (stepPx * 2.66) / 31;
   assert.ok(masks.every((op) => op.w >= unitPx + 1 && op.w <= unitPx + 4),
     '每个遮罩左右各多盖约 1px，相邻遮罩之间不会漏出细亮缝');
-  const lowerMasks = masks.filter((op) => Math.abs(op.h - (outerBandPx / 2 + 1)) <= 3);
+  const midY = horizontal.output.h - outerBandPx / 2;
+  const lowerMasks = masks.filter((op) => Math.abs(op.y - (midY - 1)) <= 3);
   assert.ok(lowerMasks.length >= 1, '下半遮罩从孔下边沿与片边中点开始');
+  const topMaskY = Math.min(...masks.map((op) => op.y));
+  assert.ok(topMaskY < blocks[0].y, '遮罩向上盖过条码顶端，避免顶部黄线');
 
   const longStrip = compose({ settings, imageW: 6000, imageH: 2000 });
   const longTexts = longStrip.ops.filter((op) => op.kind === 'text').map((op) => op.text);
