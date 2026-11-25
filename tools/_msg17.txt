@@ -1,5 +1,0 @@
-修复 DV 取景框四角被闭合成三角形
-
-- render.drawPath 之前无条件 closePath，导致所有 path（包括 DV 的 L 形折线）被首尾相连
-- 现在只有 op.fill（箭头）或显式 op.close 时才闭合；DV 四角恢复开口直角
-- 补充 DV 取景框断言：4 条 path、每条 3 点、不填充
