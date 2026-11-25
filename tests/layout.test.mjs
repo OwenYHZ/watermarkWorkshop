@@ -308,8 +308,8 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   assert.ok(bwTexts.every((color) => color === '#F2F2F2'));
   const bwPixel = bw.ops.filter((op) => op.kind === 'rect' && op.fill === '#F2F2F2');
   assert.ok(bwPixel.length > 20, 'HP5 使用独立白色点阵边字与条码');
-  assert.ok(bw.ops.some((op) => op.kind === 'rect' && op.fill === '#0B0B0B'),
-    'HP5 条码同样用片基色遮罩');
+  assert.ok(!bw.ops.some((op) => op.kind === 'text' && /KODAK/.test(op.text)),
+    'HP5 不套用 Portra 的边字');
   assert.ok(!bw.ops.some((op) => op.kind === 'text' && /KODAK/.test(op.text)),
     'HP5 不套用 Portra 的边字');
 

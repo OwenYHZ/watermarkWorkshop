@@ -95,7 +95,8 @@
       barcode2: '3111111333210101132223010011322',
       barcodeSpan: 2.6,
       barcodeOffset: 0.75,
-      numberPixel: 0.06
+      columnBars: true,
+      numberPixel: 0.026
     }
   };
 
@@ -1329,7 +1330,7 @@
       'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
       'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
       '0': ['.###.', '#..##', '#.#.#', '##..#', '#...#', '#...#', '.###.'],
-      '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+      '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '..#..'],
       '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
       '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
       '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
@@ -1410,7 +1411,22 @@
       var bandTop = holeBottom - unit * 0.7; // 上半截只微微侵入齿孔
       var mid = (holeBottom + F) / 2;      // 1/2 分界 = 齿孔下边沿与片边的中点
       var paint = edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity);
-      // 先铺一条 3333 的实心条，再用片基色遮出 0/1/2。
+      if (style.columnBars) {
+        // Ilford：细窄白条 + 明显黑缝，按列直接绘制。
+        var mid = (bandTop + F) / 2;
+        for (var ci = 0; ci < pattern.length; ci++) {
+          var cc = pattern.charAt(ci);
+          if (cc === '0') continue;
+          var hh = cc === '3' ? F - bandTop : (F - bandTop) / 2;
+          var yy = (cc === '1') ? mid : bandTop;
+          ops.push({
+            kind: 'rect', x: startX + ci * unit + unit * 0.16, y: yy, w: unit * 0.68, h: hh,
+            radius: 0, fill: paint, stroke: null, shadow: false
+          });
+        }
+        return;
+      }
+      // Portra：先铺一条 3333 的实心条，再用片基色遮出 0/1/2。
       ops.push({
         kind: 'rect', x: startX, y: bandTop, w: unit * pattern.length, h: F - bandTop,
         radius: 0, fill: paint, stroke: null, shadow: false
@@ -1512,7 +1528,7 @@
         var stockSpan = stockEnd - stockStart;
         if (style.pixel) {
           // Ilford：点阵字从第 1 孔左缘开始，允许被片边裁切。
-          pixelText(style.name, stockStart, bandY(true), step * 0.037,
+          pixelText(style.name, stockStart, bandY(true), step * 0.026,
             edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity), 'left');
         } else {
           var stockTarget = edgeSize * style.stockScale;
@@ -1531,7 +1547,7 @@
         ? (step * (style.barcodeSpan || 2.66)) / style.barcode1.length : step * 0.1;
       var bandTopY = F - outerBand - bcUnit * 0.7;
       var numPx = step * (style.numberPixel || 0.037);
-      var pixelY = bandTopY + 3.5 * numPx;
+      var pixelY = bandTopY + 3.5 * numPx + step * 0.13;
       if (style.pixel) {
         pixelText(String(num), base + holeCenter(0), pixelY, numPx, numPaint, 'center');
       } else {
@@ -1544,7 +1560,7 @@
       var aHole = style.aHole;
       if (style.pixel) {
         var aPx = step * (style.numberPixel || 0.037);
-        pixelArrow(base + holeCenter(aHole) - 0.22 * step, pixelY, aPx * 0.62);
+        pixelArrow(base + holeCenter(aHole) - 0.24 * step, pixelY, aPx * 0.9);
         pixelText(String(num) + 'A', base + holeCenter(aHole) + 0.06 * step, pixelY,
           aPx, numPaint, 'center');
       } else {
