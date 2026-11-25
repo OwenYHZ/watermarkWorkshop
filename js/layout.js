@@ -91,10 +91,23 @@
       aScale: 0.9,
       stockScale: 1,
       tracking: 0.12,
-      barcode1: '323230303131303121202',
-      barcode2: '323230303131303121203'
+      barcode1: hp5Barcode(7),
+      barcode2: hp5Barcode(31),
+      barcodeSpan: 2.2,
+      numberPixel: 0.05
     }
   };
+
+  // Ilford HP5 的条码比 Portra 密集得多：固定长度、0..3 高度，视觉上像细密的白条。
+  function hp5Barcode(seed) {
+    var out = '';
+    var x = seed;
+    for (var i = 0; i < 53; i++) {
+      x = (Math.imul(x, 1664525) + 1013904223) >>> 0;
+      out += String(x % 4);
+    }
+    return out;
+  }
 
   // DV 的 OSD 固定白色（真实摄像机 OSD 只有白色），不再提供调色。
   var DV_OSD_COLOR = '#FFFFFF';
@@ -1380,7 +1393,7 @@
     // 条码带从孔下缘一直贴到片边，满高 / 上半 / 下半三档。
     function edgeBarcode(pattern, startX) {
       if (!pattern) return;
-      var unit = (step * 2.66) / pattern.length;
+      var unit = (step * (style.barcodeSpan || 2.66)) / pattern.length;
       var holeBottom = F - outerBand;      // 下齿孔下边沿
       var bandTop = holeBottom - unit * 0.7; // 上半截只微微侵入齿孔
       var mid = (holeBottom + F) / 2;      // 1/2 分界 = 齿孔下边沿与片边的中点
@@ -1503,7 +1516,7 @@
       var bottomY = bandY(false);
       var numPaint = edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity);
       if (style.pixel) {
-        pixelText(String(num), base + holeCenter(0), bottomY, step * 0.037, numPaint, 'center');
+        pixelText(String(num), base + holeCenter(0), bottomY, step * (style.numberPixel || 0.037), numPaint, 'center');
       } else {
         edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.33, step * 0.95,
           'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
@@ -1515,7 +1528,7 @@
       if (style.pixel) {
         // 真实的 Ilford 是「►34A」：小三角在 A 片号左边，同为点阵像素。
         pixelText('>' + String(num) + 'A', base + holeCenter(aHole), bottomY,
-          step * 0.037, numPaint, 'center');
+          step * (style.numberPixel || 0.037), numPaint, 'center');
       } else {
         edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
           step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45);
