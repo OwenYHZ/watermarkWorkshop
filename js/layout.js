@@ -91,9 +91,10 @@
       aScale: 0.9,
       stockScale: 1,
       tracking: 0.12,
-      barcode1: hp5Barcode(7),
-      barcode2: hp5Barcode(31),
-      barcodeSpan: 2.2,
+      barcode1: '3332033233320332333203323',
+      barcode2: '3323332033233203332332033',
+      barcodeSpan: 1.8,
+      barcodeOffset: 0.75,
       numberPixel: 0.05
     }
   };
@@ -1316,7 +1317,7 @@
 
     var PIXEL_GLYPHS = {
       ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
-      'I': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
+      'I': ['..#..', '..#..', '..#..', '..#..', '..#..', '..#..', '..#..'],
       'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
       'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
       'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
@@ -1367,6 +1368,17 @@
         }
         cursor += adv;
       });
+    }
+
+    function pixelArrow(x, y, px) {
+      var rows = ['#', '##', '###', '##', '#'];
+      var top = y - 2.5 * px;
+      for (var r = 0; r < rows.length; r++) {
+        ops.push({
+          kind: 'rect', x: x, y: top + r * px, w: rows[r].length * px, h: px,
+          radius: 0, fill: edgeColor, stroke: null, shadow: false
+        });
+      }
     }
 
     function edgeTextAt(text, x, y, size, maxW, align, family, weight, tracking, scaleX, opacity) {
@@ -1515,20 +1527,26 @@
 
       var bottomY = bandY(false);
       var numPaint = edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity);
+      var bcUnit = style.barcode1
+        ? (step * (style.barcodeSpan || 2.66)) / style.barcode1.length : step * 0.1;
+      var bandTopY = F - outerBand - bcUnit * 0.7;
+      var numPx = step * (style.numberPixel || 0.037);
+      var pixelY = bandTopY + 2.2 * numPx;
       if (style.pixel) {
-        pixelText(String(num), base + holeCenter(0), bottomY, step * (style.numberPixel || 0.037), numPaint, 'center');
+        pixelText(String(num), base + holeCenter(0), pixelY, numPx, numPaint, 'center');
       } else {
         edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.33, step * 0.95,
           'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
       }
       if (style.barcode1) {
-        edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.36, false);
+        edgeBarcode(style.barcode1, base + holeCenter(0) + step * (style.barcodeOffset || 0.36), false);
       }
       var aHole = style.aHole;
       if (style.pixel) {
-        // 真实的 Ilford 是「►34A」：小三角在 A 片号左边，同为点阵像素。
-        pixelText('>' + String(num) + 'A', base + holeCenter(aHole), bottomY,
-          step * (style.numberPixel || 0.037), numPaint, 'center');
+        var aPx = step * (style.numberPixel || 0.037);
+        pixelArrow(base + holeCenter(aHole) - 0.22 * step, pixelY, aPx * 0.62);
+        pixelText(String(num) + 'A', base + holeCenter(aHole) + 0.06 * step, pixelY,
+          aPx, numPaint, 'center');
       } else {
         edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
           step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45);
@@ -1538,7 +1556,7 @@
       }
       if (style.barcode2) {
         edgeBarcode(style.barcode2,
-          base + holeCenter(style.aHole) + step * 0.40, false);
+          base + holeCenter(style.aHole) + step * (style.barcodeOffset || 0.40), false);
       }
     }
 
