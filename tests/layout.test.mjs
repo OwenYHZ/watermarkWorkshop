@@ -305,13 +305,13 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const bw = compose({ settings });
   assert.equal(bw.background.color, '#0B0B0B');
   const bwTexts = bw.ops.filter((op) => op.kind === 'text').map((op) => op.color);
-  assert.ok(bwTexts.every((color) => color === '#F4F4F4'));
-  const bwStock = bw.ops.find((op) => op.kind === 'text' && op.text === 'ILFORD HP5 PLUS 400');
-  assert.ok(bwStock && bwStock.color === '#F4F4F4', 'HP5 使用独立白字边字');
-  assert.ok(!bw.ops.some((op) => op.kind === 'rect' && op.fill === '#F4F4F4'),
-    'HP5 不套用 Portra 的橙色条码');
-  assert.ok(!bw.ops.some((op) => op.kind === 'line' && op.color === '#F4F4F4'),
-    'HP5 没有 Portra 的箭头');
+  assert.ok(bwTexts.every((color) => color === '#F2F2F2'));
+  const bwPixel = bw.ops.filter((op) => op.kind === 'rect' && op.fill === '#F2F2F2');
+  assert.ok(bwPixel.length > 20, 'HP5 使用独立白色点阵边字与条码');
+  assert.ok(bw.ops.some((op) => op.kind === 'rect' && op.fill === '#0B0B0B'),
+    'HP5 条码同样用片基色遮罩');
+  assert.ok(!bw.ops.some((op) => op.kind === 'text' && /KODAK/.test(op.text)),
+    'HP5 不套用 Portra 的边字');
 
   assert.deepEqual(state.FILM_TYPES.map((t) => t.value), ['bw-negative', 'color-negative']);
   assert.equal(state.sanitize({ film: { type: 'reversal' } }).film.type, 'color-negative');

@@ -62,7 +62,12 @@ await ev(`(async () => {
 })()`);
 await sleep(3000);
 await ev(`(() => { const c = document.querySelector('.template-card[data-id="film-frame"]'); if (!c.classList.contains('active')) c.click(); return true; })()`);
-await sleep(1000);
+await sleep(800);
+if (process.argv.slice(4).indexOf('bw') >= 0) {
+  await ev(`(() => { const b = document.querySelector('#controls .ctrl-row[data-path="film.type"] .seg-btn[data-value="bw-negative"]'); if (b) b.click(); return true; })()`);
+  await sleep(800);
+}
+console.log('film settings', await ev(`JSON.stringify({ type: WM.ui.settings.film.type, stock: WM.ui.settings.film.stockId })`));
 if (appShot) {
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(appShot, Buffer.from(shot.data, 'base64'));

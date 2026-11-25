@@ -1065,9 +1065,9 @@ async function main() {
       };
       result.film.bwEdge = {
         bars: WM.ui.state.lastScene.ops.filter((op) =>
-          op.kind === 'rect' && op.fill === '#F4F4F4').length,
+          op.kind === 'rect' && op.fill === '#F2F2F2').length,
         arrows: WM.ui.state.lastScene.ops.filter((op) =>
-          op.kind === 'line' && op.color === '#F4F4F4').length
+          op.kind === 'line' && op.color === '#F2F2F2').length
       };
       clickSeg('film.type', 'color-negative');
       await sleep(380);
@@ -1419,8 +1419,8 @@ async function main() {
       Math.abs(result.film.edgeOpacityValue - 0.5) <= 0.01 &&
       result.film.holeSeg === 2 &&
       result.film.bwStock && result.film.bwStock.value === 'hp5' &&
-      result.film.bwStock.options.join(',') === 'ILFORD HP5 PLUS 400' &&
-      result.film.bwEdge && result.film.bwEdge.bars === 0 && result.film.bwEdge.arrows === 0 &&
+      result.film.bwStock.options.join(',') === 'ILFORD HP5 PLUS' &&
+      result.film.bwEdge && result.film.bwEdge.bars > 0 && result.film.bwEdge.arrows === 0 &&
       result.film.labels.indexOf('12') >= 0 && result.film.labels.indexOf('12A') >= 0 &&
       result.film.blackHoles >= 8 &&
       result.film.pentaxFields.every((t) => filmTexts.some((op) => op.text === t)) &&
@@ -1437,7 +1437,7 @@ async function main() {
       result.film.canonDate && result.film.canonDate.text.indexOf("'24") === 0 && result.film.canonDate.glow > 0 &&
       result.film.noPrintGlow === false &&
       result.film.bw && result.film.bw.background === '#0B0B0B' &&
-      result.film.bw.colors.indexOf('#F4F4F4') >= 0 &&
+      result.film.bw.colors.indexOf('#F2F2F2') >= 0 &&
       result.dv && result.dv.rec && result.dv.date && result.dv.lines >= 6 &&
       result.dv.resolution && result.dv.symmetric &&
       result.dv.focusOff < result.dv.focusRects && result.dv.noResolution &&

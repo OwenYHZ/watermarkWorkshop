@@ -184,7 +184,7 @@
   // 胶卷型号：按底片类型分组，方便以后继续加型号。
   var FILM_STOCKS = [
     { id: 'portra400', type: 'color-negative', label: 'KODAK PORTRA 400' },
-    { id: 'hp5', type: 'bw-negative', label: 'ILFORD HP5 PLUS 400' }
+    { id: 'hp5', type: 'bw-negative', label: 'ILFORD HP5 PLUS' }
   ];
 
   function filmStockOptions(type) {

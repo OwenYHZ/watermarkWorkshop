@@ -75,23 +75,24 @@
       aScale: 0.9,
       stockScale: 1,
       tracking: 0.12,
-      barcode1: null,
-      barcode2: null
+      barcode1: '323230303131303121202',
+      barcode2: '323230303131303121203'
     },
     hp5: {
       type: 'bw-negative',
-      color: '#F4F4F4',
-      name: 'ILFORD HP5 PLUS 400',
+      color: '#F2F2F2',
+      name: 'ILFORD HP5 PLUS',
+      pixel: true,
       cycle: 8,
-      stockHoles: [2, 5],
+      stockHoles: [0, 3],
       aHole: 4,
       arrow: false,
       numberScale: 1,
       aScale: 0.9,
       stockScale: 1,
       tracking: 0.12,
-      barcode1: null,
-      barcode2: null
+      barcode1: '323230303131303121202',
+      barcode2: '323230303131303121203'
     }
   };
 
@@ -1300,6 +1301,61 @@
       }));
     }
 
+    var PIXEL_GLYPHS = {
+      ' ': ['.....', '.....', '.....', '.....', '.....', '.....', '.....'],
+      'I': ['#####', '..#..', '..#..', '..#..', '..#..', '..#..', '#####'],
+      'L': ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+      'F': ['#####', '#....', '#....', '####.', '#....', '#....', '#....'],
+      'O': ['.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+      'R': ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#'],
+      'D': ['####.', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'],
+      'H': ['#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+      'P': ['####.', '#...#', '#...#', '####.', '#....', '#....', '#....'],
+      'S': ['.####', '#....', '#....', '.###.', '....#', '....#', '####.'],
+      'U': ['#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'],
+      'A': ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+      '0': ['.###.', '#..##', '#.#.#', '##..#', '#...#', '#...#', '.###.'],
+      '1': ['..#..', '.##..', '..#..', '..#..', '..#..', '..#..', '.###.'],
+      '2': ['.###.', '#...#', '....#', '...#.', '..#..', '.#...', '#####'],
+      '3': ['####.', '....#', '....#', '.###.', '....#', '....#', '####.'],
+      '4': ['...#.', '..##.', '.#.#.', '#..#.', '#####', '...#.', '...#.'],
+      '5': ['#####', '#....', '#....', '####.', '....#', '....#', '####.'],
+      '6': ['.###.', '#....', '#....', '####.', '#...#', '#...#', '.###.'],
+      '7': ['#####', '....#', '...#.', '..#..', '.#...', '.#...', '.#...'],
+      '8': ['.###.', '#...#', '#...#', '.###.', '#...#', '#...#', '.###.'],
+      '9': ['.###.', '#...#', '#...#', '.####', '....#', '....#', '.###.'],
+      '>': ['#....', '##...', '###..', '####.', '###..', '##...', '#....']
+    };
+
+    // 5×7 点阵字：Ilford 的字母、数字与箭头都有明显的像素台阶。
+    function pixelText(text, x, y, px, color, align) {
+      var chars = String(text == null ? '' : text).toUpperCase().split('');
+      var adv = 6 * px;
+      var total = chars.length * adv - px;
+      var cursor = align === 'center' ? x - total / 2 : align === 'right' ? x - total : x;
+      var top = y - 3.5 * px;
+      chars.forEach(function (ch) {
+        var glyph = PIXEL_GLYPHS[ch] || PIXEL_GLYPHS[' '];
+        for (var row = 0; row < 7; row++) {
+          var line = glyph[row];
+          var col = 0;
+          while (col < 5) {
+            if (line.charAt(col) === '#') {
+              var run = 1;
+              while (col + run < 5 && line.charAt(col + run) === '#') run++;
+              ops.push({
+                kind: 'rect', x: cursor + col * px, y: top + row * px,
+                w: run * px, h: px,
+                radius: 0, fill: color, stroke: null, shadow: false
+              });
+              col += run;
+            } else col++;
+          }
+        }
+        cursor += adv;
+      });
+    }
+
     function edgeTextAt(text, x, y, size, maxW, align, family, weight, tracking, scaleX, opacity) {
       var font = family || EDGE_FONT;
       var w = weight || 700;
@@ -1419,38 +1475,57 @@
     for (var k = firstCycle; k < cycles; k++) {
       var base = k * cycleLen;
       var num = ((info.start - 1 + k) % 36 + 36) % 36 + 1;
-      edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.26, step * 0.95,
-        'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
+      if (!style.pixel) {
+        edgeTextAt(String(num), base + holeCenter(0), bandY(true), step * 0.31, step * 0.95,
+          'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
+      }
       var stockStartHole = style.stockHoles[0];
       var stockEndHole = style.stockHoles[1];
       var stockStart = base + holeCenter(stockStartHole) - holeAlong / 2;
       var stockEnd = base + holeCenter(stockEndHole) + holeAlong / 2;
       if (stockEnd > stockStart) {
         var stockSpan = stockEnd - stockStart;
-        var stockTarget = edgeSize * style.stockScale;
-        var naturalWidth = measure(style.name, {
-          size: stockTarget, weight: 700, family: EDGE_STOCK_FONT, tracking: stockTarget * 0.10
-        });
-        if (naturalWidth > 0) stockTarget *= Math.min(1.8, (stockSpan * 0.99) / naturalWidth);
-        edgeTextAt(style.name, stockStart, bandY(true) + step * 0.03, stockTarget, stockSpan,
-          'left', EDGE_STOCK_FONT, 700, 0.10);
+        if (style.pixel) {
+          // Ilford：点阵字从第 1 孔左缘开始，允许被片边裁切。
+          pixelText(style.name, stockStart, bandY(true), step * 0.037,
+            edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity), 'left');
+        } else {
+          var stockTarget = edgeSize * style.stockScale;
+          var naturalWidth = measure(style.name, {
+            size: stockTarget, weight: 700, family: EDGE_STOCK_FONT, tracking: stockTarget * 0.10
+          });
+          if (naturalWidth > 0) stockTarget *= Math.min(1.8, (stockSpan * 0.99) / naturalWidth);
+          edgeTextAt(style.name, stockStart, bandY(true) + step * 0.03, stockTarget, stockSpan,
+            'left', EDGE_STOCK_FONT, 700, 0.10);
+        }
       }
 
       var bottomY = bandY(false);
-      edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.30, step * 0.95,
-        'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
+      var numPaint = edgeOpacity >= 0.999 ? edgeColor : rgba(edgeColor, edgeOpacity);
+      if (style.pixel) {
+        pixelText(String(num), base + holeCenter(0), bottomY, step * 0.037, numPaint, 'center');
+      } else {
+        edgeTextAt(String(num), base + holeCenter(0), bottomY, step * 0.33, step * 0.95,
+          'center', EDGE_NUM_FONT, 600, 0.02, 1.45);
+      }
       if (style.barcode1) {
         edgeBarcode(style.barcode1, base + holeCenter(0) + step * 0.36, false);
       }
       var aHole = style.aHole;
-      edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
-        step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45);
+      if (style.pixel) {
+        // 真实的 Ilford 是「►34A」：小三角在 A 片号左边，同为点阵像素。
+        pixelText('>' + String(num) + 'A', base + holeCenter(aHole), bottomY,
+          step * 0.037, numPaint, 'center');
+      } else {
+        edgeTextAt(String(num) + 'A', base + holeCenter(aHole), bottomY,
+          step * 0.22, step * 0.95, 'center', EDGE_NUM_FONT, 600, 0.01, 1.45);
+        if (style.arrow) {
+          edgeArrow(base + holeCenter(aHole) + step * 0.28, F - Math.max(1, step * 0.05));
+        }
+      }
       if (style.barcode2) {
         edgeBarcode(style.barcode2,
           base + holeCenter(style.aHole) + step * 0.40, false);
-      }
-      if (style.arrow) {
-        edgeArrow(base + holeCenter(aHole) + step * 0.28, F - Math.max(1, step * 0.05));
       }
     }
 
