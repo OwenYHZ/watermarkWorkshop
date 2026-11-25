@@ -145,9 +145,13 @@ test('胶片齿孔：135 比例、孔向、两端孔、孔间打印与画面内�
   const innerGap = horizontal.imageRect.y - (top[0].y + top[0].h);
   assert.ok(Math.abs(innerGap - 0.6 * unit) <= 2, '孔内缘距画面 0.6mm');
   const firstGap = top[0].x - horizontal.imageRect.x;
+  assert.ok(firstGap > 0 && firstGap < 4.75 * unit, '首孔靠近左端');
+  for (let i = 1; i < top.length; i++) {
+    assert.ok(Math.abs((top[i].x - top[i - 1].x) - 4.75 * unit) <= 1,
+      '孔距固定 4.75mm，不随片长缩放');
+  }
   const lastGap = horizontal.imageRect.x + horizontal.imageRect.w - (top[top.length - 1].x + top[top.length - 1].w);
-  assert.ok(firstGap > 0 && firstGap < 300, '首孔靠近左端');
-  assert.ok(lastGap > 0 && lastGap < 300, '末孔靠近右端');
+  assert.ok(Math.abs(lastGap) <= 4.75 * unit, '末孔在右端附近（可被片边裁切）');
 
   const texts = horizontal.ops.filter((op) => op.kind === 'text');
   const textOf = (value) => texts.find((op) => op.text === value);

@@ -1205,8 +1205,10 @@
     // 扫描 135 片基时左右会多扫一点点：等效 24×36 尺寸下两端各 0.5mm。
     var endPad = 0.5 * mm;
     var alongTotal = alongDim + endPad * 2;
-    var n = Math.min(240, Math.max(2, Math.round(alongTotal / Math.max(0.001, pitch))));
-    var step = alongTotal / n;
+    // 齿孔间距是物理固定的：4.75mm（38mm / 8 孔），绝不随片长缩放。
+    // 孔数按固定间距铺，两端多铺一孔，超出的部分由画布自然裁切。
+    var step = pitch;
+    var n = Math.min(240, Math.max(2, Math.ceil(alongTotal / pitch) + 1));
 
     // 统一在「横向胶片」坐标系里排版：宽 = 片长，高 = 35mm。
     // 竖向齿孔时最后把整份 op 旋转 90°（等价于整幅旋转竖拍）。
